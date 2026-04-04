@@ -1,0 +1,41 @@
+import { create } from "zustand";
+import { devtools } from "zustand/middleware";
+import type { AppStore } from "./types";
+
+export const useAppStore = create<AppStore>()(
+  devtools(
+    (set) => ({
+      // Selection
+      bbox: null,
+      polygonFeature: null,
+      setBbox: (bbox) => set({ bbox }),
+      setPolygonFeature: (polygonFeature) => set({ polygonFeature }),
+      clearSelection: () =>
+        set({ bbox: null, polygonFeature: null, status: "idle" }),
+
+      // Processing
+      status: "idle",
+      error: null,
+      processed: { cutLayer: null, engraveLayer: null, topCutLayer: null },
+      setStatus: (status, error = null) => set({ status, error: error ?? null }),
+      setProcessed: (processed) => set({ processed }),
+
+      // Visibility
+      visible: { cut: true, engrave: true, topCut: true },
+      toggleVisible: (layer) =>
+        set((s) => ({ visible: { ...s.visible, [layer]: !s.visible[layer] } })),
+
+      // Export config
+      widthMm: 200,
+      simplificationTolerance: 0.0001,
+      roadBufferMeters: 12,
+      isExporting: false,
+      setWidthMm: (widthMm) => set({ widthMm }),
+      setSimplification: (simplificationTolerance) =>
+        set({ simplificationTolerance }),
+      setRoadBuffer: (roadBufferMeters) => set({ roadBufferMeters }),
+      setIsExporting: (isExporting) => set({ isExporting }),
+    }),
+    { name: "LaserMapStore" }
+  )
+);
