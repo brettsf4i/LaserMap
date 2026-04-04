@@ -2,10 +2,10 @@
 
 import { useRef } from "react";
 import { useAppStore } from "@/lib/store";
-import { buildWaterQuery, buildMinorRoadsQuery, buildMajorRoadsQuery } from "@/lib/overpass/queries";
+import { buildCombinedQuery } from "@/lib/overpass/queries";
 import {
-  parseOverpassToPolygons,
-  parseOverpassToLines,
+  parseCombinedResponse,
+  type CombinedLayers,
   type OverpassResponse,
 } from "@/lib/overpass/parser";
 import { fetchOverpass } from "@/lib/overpass/client";
@@ -15,15 +15,10 @@ import LayerToggles from "./LayerToggles";
 import RoadControls from "./RoadControls";
 import SizeControls from "./SizeControls";
 import StatusBar from "./StatusBar";
-import type { Feature, MultiPolygon, LineString, Polygon } from "geojson";
 
-// Cache raw Overpass responses so slider changes only re-run geometry
-const osmCache = {
-  water: null as OverpassResponse | null,
-  minorRoads: null as OverpassResponse | null,
-  majorRoads: null as OverpassResponse | null,
-  bbox: null as string | null,
-};
+// Cache parsed OSM features so slider changes only re-run geometry, not network
+let cachedLayers: CombinedLayers | null = null;
+let cachedBboxKey: string | null = null;
 
 export default function ControlPanel() {
   const store = useAppStore();
@@ -39,23 +34,19 @@ export default function ControlPanel() {
     return Math.abs(east - west) * 111.32 * cosLat * Math.abs(north - south) * 110.574;
   }
 
-  async function runPipeline(
-    water: OverpassResponse,
-    minorRoads: OverpassResponse,
-    majorRoads: OverpassResponse
-  ) {
+  async function runPipeline(layers: CombinedLayers) {
     if (!store.bbox) return;
     store.setStatus("processing");
     try {
-      const layers = await runGeometryPipeline({
+      const processed = await runGeometryPipeline({
         bbox: store.bbox,
-        waterFeatures: parseOverpassToPolygons(water) as Feature<Polygon | MultiPolygon>[],
-        minorRoadFeatures: parseOverpassToLines(minorRoads) as Feature<LineString>[],
-        majorRoadFeatures: parseOverpassToLines(majorRoads) as Feature<LineString>[],
+        waterFeatures: layers.waterFeatures,
+        minorRoadFeatures: layers.minorRoadFeatures,
+        majorRoadFeatures: layers.majorRoadFeatures,
         simplificationTolerance: store.simplificationTolerance,
         roadBufferMeters: store.roadBufferMeters,
       });
-      store.setProcessed(layers);
+      store.setProcessed(processed);
       store.setStatus("ready");
     } catch (err) {
       store.setStatus("error", (err as Error).message);
@@ -75,40 +66,30 @@ export default function ControlPanel() {
     }
 
     const bboxKey = store.bbox.join(",");
-    const cacheValid = osmCache.bbox === bboxKey && osmCache.water && osmCache.minorRoads && osmCache.majorRoads;
 
-    if (cacheValid) {
-      await runPipeline(osmCache.water!, osmCache.minorRoads!, osmCache.majorRoads!);
+    // Use cached parse result if bbox hasn't changed
+    if (cachedBboxKey === bboxKey && cachedLayers) {
+      await runPipeline(cachedLayers);
       return;
     }
 
     store.setStatus("fetching");
-
     try {
-      const [waterData, minorData, majorData] = await Promise.all([
-        fetchOverpass(buildWaterQuery(store.bbox)),
-        fetchOverpass(buildMinorRoadsQuery(store.bbox)),
-        fetchOverpass(buildMajorRoadsQuery(store.bbox)),
-      ]);
-
-      osmCache.water = waterData;
-      osmCache.minorRoads = minorData;
-      osmCache.majorRoads = majorData;
-      osmCache.bbox = bboxKey;
-
-      await runPipeline(waterData, minorData, majorData);
+      const raw = await fetchOverpass(buildCombinedQuery(store.bbox)) as OverpassResponse;
+      const parsed = parseCombinedResponse(raw);
+      cachedLayers = parsed;
+      cachedBboxKey = bboxKey;
+      await runPipeline(parsed);
     } catch (err) {
       store.setStatus("error", (err as Error).message);
     }
   };
 
-  // Debounced regeneration for slider changes
+  // Debounced regeneration when sliders change — skips network fetch
   const handleSliderRegen = () => {
     if (regenTimerRef.current) clearTimeout(regenTimerRef.current);
     regenTimerRef.current = setTimeout(() => {
-      if (osmCache.water && osmCache.minorRoads && osmCache.majorRoads) {
-        runPipeline(osmCache.water, osmCache.minorRoads, osmCache.majorRoads);
-      }
+      if (cachedLayers) runPipeline(cachedLayers);
     }, 300);
   };
 
@@ -127,15 +108,11 @@ export default function ControlPanel() {
 
   return (
     <aside className="w-80 bg-white shadow-xl flex flex-col gap-5 p-5 overflow-y-auto border-l border-gray-100 z-10">
-      {/* Header */}
       <div>
         <h1 className="text-xl font-bold text-gray-900">Laser Map Maker</h1>
-        <p className="text-xs text-gray-400 mt-0.5">
-          OSM → SVG layers for laser cutting
-        </p>
+        <p className="text-xs text-gray-400 mt-0.5">OSM → SVG layers for laser cutting</p>
       </div>
 
-      {/* Selection info */}
       <div className="text-xs">
         {store.bbox ? (
           <div className="space-y-0.5">
@@ -160,25 +137,18 @@ export default function ControlPanel() {
       </div>
 
       <div className="border-t border-gray-100" />
-
       <LayerToggles />
-
       <div className="border-t border-gray-100" />
 
-      {/* Road controls with regen on change */}
       <div onChange={handleSliderRegen}>
         <RoadControls />
       </div>
 
       <div className="border-t border-gray-100" />
-
       <SizeControls />
-
       <div className="border-t border-gray-100" />
-
       <StatusBar />
 
-      {/* Actions */}
       <div className="flex flex-col gap-2 mt-auto">
         <button
           onClick={handleGenerate}
