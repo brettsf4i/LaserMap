@@ -8,6 +8,7 @@ import {
   parseOverpassToLines,
   type OverpassResponse,
 } from "@/lib/overpass/parser";
+import { fetchOverpass } from "@/lib/overpass/client";
 import { runGeometryPipeline } from "@/lib/geometry/pipeline";
 import { exportLayersAsZip } from "@/lib/export/zip";
 import LayerToggles from "./LayerToggles";
@@ -84,36 +85,10 @@ export default function ControlPanel() {
     store.setStatus("fetching");
 
     try {
-      const [waterRes, minorRes, majorRes] = await Promise.all([
-        fetch("/api/overpass", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ query: buildWaterQuery(store.bbox), bbox: store.bbox }),
-        }),
-        fetch("/api/overpass", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ query: buildMinorRoadsQuery(store.bbox), bbox: store.bbox }),
-        }),
-        fetch("/api/overpass", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ query: buildMajorRoadsQuery(store.bbox), bbox: store.bbox }),
-        }),
-      ]);
-
-      // Check for errors
-      for (const res of [waterRes, minorRes, majorRes]) {
-        if (!res.ok) {
-          const errBody = await res.json().catch(() => ({ error: `HTTP ${res.status}` }));
-          throw new Error(errBody.error ?? `HTTP ${res.status}`);
-        }
-      }
-
       const [waterData, minorData, majorData] = await Promise.all([
-        waterRes.json(),
-        minorRes.json(),
-        majorRes.json(),
+        fetchOverpass(buildWaterQuery(store.bbox)),
+        fetchOverpass(buildMinorRoadsQuery(store.bbox)),
+        fetchOverpass(buildMajorRoadsQuery(store.bbox)),
       ]);
 
       osmCache.water = waterData;

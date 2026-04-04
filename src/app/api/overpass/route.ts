@@ -9,7 +9,8 @@ const cache = new LRUCache<string, string>({
 const OVERPASS_ENDPOINTS = [
   "https://overpass-api.de/api/interpreter",
   "https://overpass.kumi.systems/api/interpreter",
-  "https://maps.mail.ru/osm/tools/overpass/api/interpreter",
+  "https://overpass.private.coffee/api/interpreter",
+  "https://overpass.openstreetmap.ru/api/interpreter",
 ];
 
 const MAX_AREA_KM2 = 25;
@@ -44,28 +45,31 @@ export async function POST(req: NextRequest) {
     });
   }
 
-  let lastError: Error | null = null;
+  const errors: string[] = [];
   for (const endpoint of OVERPASS_ENDPOINTS) {
     try {
       const res = await fetch(endpoint, {
         method: "POST",
         headers: { "Content-Type": "application/x-www-form-urlencoded" },
         body: `data=${encodeURIComponent(body.query)}`,
-        signal: AbortSignal.timeout(30_000),
+        signal: AbortSignal.timeout(25_000),
       });
-      if (!res.ok) throw new Error(`HTTP ${res.status} from ${endpoint}`);
+      if (!res.ok) {
+        errors.push(`${endpoint} → HTTP ${res.status}`);
+        continue;
+      }
       const text = await res.text();
       cache.set(cacheKey, text);
       return new NextResponse(text, {
         headers: { "Content-Type": "application/json", "X-Cache": "MISS" },
       });
     } catch (err) {
-      lastError = err as Error;
+      errors.push(`${endpoint} → ${(err as Error).message}`);
     }
   }
 
   return NextResponse.json(
-    { error: `Overpass API unavailable: ${lastError?.message}` },
+    { error: `All Overpass endpoints failed:\n${errors.join("\n")}` },
     { status: 502 }
   );
 }
