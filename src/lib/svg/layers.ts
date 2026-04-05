@@ -53,11 +53,14 @@ export function generateEngraveLayerSVG(
   border?: BorderOptions
 ): string {
   const d = multiLineStringToPath(feature.geometry, proj);
+  // Clip content to the inner area but do NOT render the frame —
+  // the top-cut layer's border covers that band when assembled.
   return buildSVGDocument(
     [{ id: "engrave-layer", pathData: d, style: "engrave" }],
     proj.width,
     proj.height,
-    border
+    border,
+    false // showFrame = false
   );
 }
 
