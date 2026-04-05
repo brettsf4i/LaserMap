@@ -3,73 +3,53 @@
 import { useState, useEffect, useRef, type RefObject } from "react";
 import { useAppStore } from "@/lib/store";
 import type { MapCanvasHandle } from "@/components/map/MapCanvas";
-import { displayToMm, type Unit } from "@/lib/units";
 
 interface Props {
   mapRef: RefObject<MapCanvasHandle | null>;
 }
 
-type DrawMode = "idle" | "square" | "rect";
-
-/** Default dimensions per unit */
-function defaultDims(unit: Unit): [number, number] {
-  return unit === "in" ? [8, 6] : [200, 150];
-}
+const PRESETS = [
+  { label: "1∶1",  w: 1,   h: 1   },
+  { label: "4∶3",  w: 4,   h: 3   },
+  { label: "3∶2",  w: 3,   h: 2   },
+  { label: "16∶9", w: 16,  h: 9   },
+  { label: "A4",   w: 210, h: 297 },
+  { label: "Letter", w: 17, h: 22 },
+];
 
 export default function DrawControls({ mapRef }: Props) {
-  const { bbox, unit } = useAppStore();
+  const { bbox } = useAppStore();
+  const [ratioW, setRatioW] = useState(1);
+  const [ratioH, setRatioH] = useState(1);
+  const [isDrawing, setIsDrawing] = useState(false);
 
-  const [mode, setMode] = useState<DrawMode>("idle");
-  const [[rectW, rectH], setDims] = useState<[number, number]>(() =>
-    defaultDims(unit)
-  );
-
-  // Convert dims when the unit toggle changes
-  const prevUnitRef = useRef<Unit>(unit);
-  useEffect(() => {
-    if (unit === prevUnitRef.current) return;
-    prevUnitRef.current = unit;
-    // Convert current display values to mm then back to new unit
-    const wMm = displayToMm(rectW, unit === "in" ? "mm" : "in");
-    const hMm = displayToMm(rectH, unit === "in" ? "mm" : "in");
-    const factor = unit === "in" ? 1 / 25.4 : 25.4;
-    setDims([
-      parseFloat((wMm * (unit === "in" ? 1 / 25.4 : 1)).toFixed(unit === "in" ? 2 : 0)),
-      parseFloat((hMm * (unit === "in" ? 1 / 25.4 : 1)).toFixed(unit === "in" ? 2 : 0)),
-    ]);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [unit]);
-
-  // Detect draw completion: bbox has changed while we were drawing
+  // Auto-reset when draw:created fires (bbox changes)
   const prevBboxRef = useRef(bbox);
   useEffect(() => {
-    if (bbox !== prevBboxRef.current && mode !== "idle") {
-      setMode("idle");
-    }
+    if (bbox !== prevBboxRef.current && isDrawing) setIsDrawing(false);
     prevBboxRef.current = bbox;
-  }, [bbox, mode]);
+  }, [bbox, isDrawing]);
 
-  // ------- handlers -------
+  const swap = () => { setRatioW(ratioH); setRatioH(ratioW); };
 
-  const activateSquare = () => {
-    mapRef.current?.startSquareDraw();
-    setMode("square");
+  const applyPreset = (w: number, h: number) => {
+    setRatioW(w);
+    setRatioH(h);
   };
 
-  const activateRect = () => {
-    if (!rectW || !rectH || rectW <= 0 || rectH <= 0) return;
-    // ratio is purely about aspect, so unit doesn't matter
-    mapRef.current?.startAspectDraw(rectW / rectH);
-    setMode("rect");
+  const activePreset = PRESETS.find((p) => p.w === ratioW && p.h === ratioH) ?? null;
+
+  const handleDraw = () => {
+    const ratio = ratioW / ratioH;
+    if (!isFinite(ratio) || ratio <= 0) return;
+    mapRef.current?.startAspectDraw(ratio);
+    setIsDrawing(true);
   };
 
-  const cancel = () => {
+  const handleCancel = () => {
     mapRef.current?.cancelDraw();
-    setMode("idle");
+    setIsDrawing(false);
   };
-
-  const step = unit === "in" ? 0.25 : 5;
-  const isDrawing = mode !== "idle";
 
   return (
     <div className="flex flex-col gap-3">
@@ -77,80 +57,121 @@ export default function DrawControls({ mapRef }: Props) {
         Draw Selection
       </h3>
 
-      {/* ── Square ── */}
-      <button
-        onClick={mode === "square" ? cancel : activateSquare}
-        disabled={isDrawing && mode !== "square"}
-        className={`w-full flex items-center justify-center gap-2 px-3 py-2 rounded-lg text-sm font-medium border transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${
-          mode === "square"
-            ? "bg-blue-600 text-white border-blue-600"
-            : "bg-white text-gray-700 border-gray-300 hover:bg-gray-50"
-        }`}
-      >
-        <svg viewBox="0 0 16 16" className="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" strokeWidth={1.8}>
-          <rect x="2" y="2" width="12" height="12" rx="0.5" />
-        </svg>
-        {mode === "square" ? "Click & drag on map… (Esc to cancel)" : "Draw Square (1 : 1)"}
-      </button>
+      {/* ── Aspect ratio heading ── */}
+      <p className="text-xs text-gray-400 text-center tracking-wide -mb-1">
+        Aspect Ratio
+      </p>
 
-      {/* ── Custom Rectangle ── */}
-      <div className="rounded-lg border border-gray-200 p-3 space-y-2.5">
-        <p className="text-xs font-medium text-gray-600">Custom Rectangle</p>
+      {/* ── Control pill ── */}
+      <div className="flex items-stretch h-10 rounded-full border border-gray-200 bg-white shadow-sm overflow-hidden">
+        {/* Swap */}
+        <button
+          onClick={swap}
+          title="Swap width ↔ height"
+          className="flex items-center justify-center w-10 shrink-0 text-gray-400 hover:text-gray-600 hover:bg-gray-50 transition-colors border-r border-gray-200"
+        >
+          <SwapIcon />
+        </button>
 
-        <div className="flex gap-2">
-          <div className="flex-1">
-            <label className="text-xs text-gray-400 mb-0.5 block">
-              Width ({unit})
-            </label>
-            <input
-              type="number"
-              min={1}
-              step={step}
-              value={rectW}
-              onChange={(e) => setDims([Number(e.target.value), rectH])}
-              className="w-full border border-gray-300 rounded px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-            />
-          </div>
-          <div className="flex items-end pb-1 text-gray-400 text-xs font-medium">×</div>
-          <div className="flex-1">
-            <label className="text-xs text-gray-400 mb-0.5 block">
-              Height ({unit})
-            </label>
-            <input
-              type="number"
-              min={1}
-              step={step}
-              value={rectH}
-              onChange={(e) => setDims([rectW, Number(e.target.value)])}
-              className="w-full border border-gray-300 rounded px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-            />
-          </div>
+        {/* Width */}
+        <input
+          type="number"
+          min={1}
+          max={999}
+          value={ratioW}
+          onChange={(e) => setRatioW(Math.max(1, Math.round(Number(e.target.value))))}
+          className="flex-1 min-w-0 text-center text-sm font-semibold text-gray-800 bg-transparent focus:outline-none"
+        />
+
+        {/* Linked indicator */}
+        <div className="flex items-center justify-center w-9 shrink-0 bg-gray-800 text-white">
+          <LinkIcon />
         </div>
 
+        {/* Height */}
+        <input
+          type="number"
+          min={1}
+          max={999}
+          value={ratioH}
+          onChange={(e) => setRatioH(Math.max(1, Math.round(Number(e.target.value))))}
+          className="flex-1 min-w-0 text-center text-sm font-semibold text-gray-800 bg-transparent focus:outline-none"
+        />
+
+        {/* Flip (same as swap, portrait ↔ landscape) */}
         <button
-          onClick={mode === "rect" ? cancel : activateRect}
-          disabled={(isDrawing && mode !== "rect") || rectW <= 0 || rectH <= 0}
-          className={`w-full flex items-center justify-center gap-2 px-3 py-1.5 rounded text-sm font-medium border transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${
-            mode === "rect"
-              ? "bg-blue-600 text-white border-blue-600"
-              : "bg-white text-gray-700 border-gray-300 hover:bg-gray-50"
-          }`}
+          onClick={swap}
+          title="Flip orientation"
+          className="flex items-center justify-center w-10 shrink-0 text-gray-400 hover:text-gray-600 hover:bg-gray-50 transition-colors border-l border-gray-200"
         >
-          <svg viewBox="0 0 20 14" className="w-4 h-3 flex-shrink-0" fill="none" stroke="currentColor" strokeWidth={1.8}>
-            <rect x="1" y="1" width="18" height="12" rx="0.5" />
-          </svg>
-          {mode === "rect"
-            ? "Click & drag on map… (Esc to cancel)"
-            : `Draw ${rectW} × ${rectH} ${unit}`}
+          <FlipIcon />
         </button>
       </div>
 
-      {/* Tip */}
+      {/* ── Preset chips ── */}
+      <div className="flex flex-wrap gap-1.5">
+        {PRESETS.map(({ label, w, h }) => (
+          <button
+            key={label}
+            onClick={() => applyPreset(w, h)}
+            className={`px-2.5 py-0.5 rounded-full text-xs font-medium border transition-colors ${
+              activePreset?.label === label
+                ? "border-blue-400 bg-blue-50 text-blue-600"
+                : "border-gray-200 text-gray-500 hover:border-gray-300 hover:text-gray-700"
+            }`}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+
+      {/* ── Draw / Cancel button ── */}
+      <button
+        onClick={isDrawing ? handleCancel : handleDraw}
+        disabled={ratioW <= 0 || ratioH <= 0}
+        className={`w-full py-2 rounded-lg text-sm font-medium transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${
+          isDrawing
+            ? "bg-blue-600 hover:bg-blue-700 text-white"
+            : "bg-gray-800 hover:bg-gray-700 text-white"
+        }`}
+      >
+        {isDrawing ? "Drag to draw… (Esc to cancel)" : "Draw on Map"}
+      </button>
+
       <p className="text-xs text-gray-400 -mt-1">
         {isDrawing
-          ? "Drag to size your selection, then release."
-          : "Use the polygon tool in the map toolbar for freeform selections."}
+          ? "Release the mouse to confirm your selection."
+          : "Use the polygon tool on the map for freeform areas."}
       </p>
     </div>
+  );
+}
+
+// ── Inline SVG icons ───────────────────────────────────────────────
+
+function SwapIcon() {
+  return (
+    <svg width="15" height="15" viewBox="0 0 15 15" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M2 4.5h11M10 2l3 2.5-3 2.5" />
+      <path d="M13 10.5H2M5 8l-3 2.5 3 2.5" />
+    </svg>
+  );
+}
+
+function LinkIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M5.5 8.5a3 3 0 004.243 0l1.5-1.5a3 3 0 00-4.243-4.243L6 3.75" />
+      <path d="M8.5 5.5a3 3 0 00-4.243 0l-1.5 1.5a3 3 0 004.243 4.243L8 10.25" />
+    </svg>
+  );
+}
+
+function FlipIcon() {
+  return (
+    <svg width="15" height="15" viewBox="0 0 15 15" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M7.5 2v11M4.5 5L2 7.5l2.5 2.5" />
+      <path d="M10.5 5L13 7.5l-2.5 2.5" />
+    </svg>
   );
 }
