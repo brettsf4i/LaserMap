@@ -21,17 +21,23 @@ export const WATER_TAGS: Record<string, string | null> = {
   "landuse": "reservoir",
 };
 
-// Single combined query fetching all layers at once — avoids rate limiting
+// Single combined query fetching all layers at once — avoids rate limiting.
+// Relations are included so that large rivers/lakes (stored as OSM multipolygons)
+// are captured as full-surface polygons rather than just centerlines.
 export function buildCombinedQuery(bbox: BBox): string {
   const bb = toOverpassBBox(bbox);
   return `
 [out:json][timeout:60];
 (
   way["natural"="water"](${bb});
+  relation["natural"="water"](${bb});
   way["waterway"~"^(river|canal)$"](${bb});
+  relation["waterway"="riverbank"](${bb});
   way["landuse"="reservoir"](${bb});
+  relation["landuse"="reservoir"](${bb});
   way["natural"="wetland"](${bb});
   way["water"~"."](${bb});
+  relation["water"~"."](${bb});
   way["highway"~"^(residential|unclassified|service|living_street|pedestrian|footway|cycleway|path|track)$"](${bb});
   way["highway"~"^(motorway|motorway_link|trunk|trunk_link|primary|primary_link|secondary|secondary_link|tertiary|tertiary_link)$"](${bb});
 );
