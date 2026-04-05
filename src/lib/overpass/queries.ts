@@ -28,7 +28,7 @@ export function buildCombinedQuery(bbox: BBox): string {
 [out:json][timeout:60];
 (
   way["natural"="water"](${bb});
-  way["waterway"~"^(river|stream|canal|drain|ditch)$"](${bb});
+  way["waterway"~"^(river|canal)$"](${bb});
   way["landuse"="reservoir"](${bb});
   way["natural"="wetland"](${bb});
   way["water"~"."](${bb});
