@@ -54,7 +54,7 @@ export default function GeocoderSearch({ mapRef }: Props) {
   };
 
   return (
-    <div className="absolute top-3 left-3 z-[1000] w-72">
+    <div className="absolute top-3 left-1/2 -translate-x-1/2 z-[1000] w-72">
       <div className="relative">
         <input
           type="text"
