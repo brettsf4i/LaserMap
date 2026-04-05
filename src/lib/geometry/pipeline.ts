@@ -6,7 +6,7 @@ import { simplifyRoads, bufferMajorRoads } from "./roads";
 
 export interface PipelineInput {
   bbox: BBox;
-  waterFeatures: Feature<Polygon | MultiPolygon>[];
+  waterFeatures: Feature<Polygon | MultiPolygon | LineString>[];
   minorRoadFeatures: Feature<LineString>[];
   majorRoadFeatures: Feature<LineString>[];
   simplificationTolerance: number;
@@ -20,7 +20,7 @@ export async function runGeometryPipeline(
 
   // 1. CUT LAYER: land = bbox minus water
   const water = unionWaterPolygons(
-    input.waterFeatures as Feature<Polygon | MultiPolygon>[],
+    input.waterFeatures,
     bboxPolygon
   );
   const cutLayer = subtractWaterFromLand(bboxPolygon, water);

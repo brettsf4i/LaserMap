@@ -62,25 +62,44 @@ export function parseOverpassToPolygons(
 }
 
 export interface CombinedLayers {
-  waterFeatures: Feature<Polygon>[];
+  // Closed water bodies (lakes, ponds, reservoirs) → Polygon
+  // Open waterways (rivers, streams, canals) → LineString (buffered later)
+  waterFeatures: Feature<Polygon | LineString>[];
   minorRoadFeatures: Feature<LineString>[];
   majorRoadFeatures: Feature<LineString>[];
 }
 
-function isWaterWay(tags: Record<string, string> = {}): boolean {
-  return (
+const WATER_AREA_TAGS = new Set(["natural", "landuse", "water"]);
+const WATERWAY_LINE_TYPES = new Set(["river", "stream", "canal", "drain", "ditch"]);
+
+function classifyWaterWay(tags: Record<string, string>): "polygon" | "line" | null {
+  // Closed area water features
+  if (
     tags["natural"] === "water" ||
     tags["natural"] === "wetland" ||
     tags["landuse"] === "reservoir" ||
-    !!tags["water"] ||
-    ["river", "stream", "canal", "drain", "ditch"].includes(tags["waterway"] ?? "")
-  );
+    tags["water"]
+  ) {
+    return "polygon";
+  }
+  // Linear waterways — must be buffered into area
+  if (tags["waterway"] && WATERWAY_LINE_TYPES.has(tags["waterway"])) {
+    return "line";
+  }
+  return null;
+}
+
+function isRingClosed(coords: Position[]): boolean {
+  if (coords.length < 4) return false;
+  const first = coords[0];
+  const last = coords[coords.length - 1];
+  return first[0] === last[0] && first[1] === last[1];
 }
 
 export function parseCombinedResponse(data: OverpassResponse): CombinedLayers {
   const nodeMap = buildNodeMap(data);
 
-  const waterFeatures: Feature<Polygon>[] = [];
+  const waterFeatures: Feature<Polygon | LineString>[] = [];
   const minorRoadFeatures: Feature<LineString>[] = [];
   const majorRoadFeatures: Feature<LineString>[] = [];
 
@@ -92,25 +111,45 @@ export function parseCombinedResponse(data: OverpassResponse): CombinedLayers {
       .map((id) => nodeMap.get(id))
       .filter((c): c is Position => c !== undefined);
 
-    if (isWaterWay(tags)) {
-      if (coords.length < 4) continue;
-      const first = coords[0];
-      const last = coords[coords.length - 1];
-      if (first[0] !== last[0] || first[1] !== last[1]) coords.push([first[0], first[1]]);
-      waterFeatures.push({
-        type: "Feature", properties: tags,
-        geometry: { type: "Polygon", coordinates: [coords] },
-      });
+    const waterClass = classifyWaterWay(tags);
+
+    if (waterClass === "polygon") {
+      // Only emit as polygon if the way is actually closed (lake, pond, reservoir)
+      if (isRingClosed(coords)) {
+        waterFeatures.push({
+          type: "Feature",
+          properties: tags,
+          geometry: { type: "Polygon", coordinates: [coords] },
+        });
+      } else if (coords.length >= 2) {
+        // Unclosed "area" water tag — treat as line to buffer (rare edge case)
+        waterFeatures.push({
+          type: "Feature",
+          properties: tags,
+          geometry: { type: "LineString", coordinates: coords },
+        });
+      }
+    } else if (waterClass === "line") {
+      // Rivers, streams etc. are lines — water.ts will buffer them
+      if (coords.length >= 2) {
+        waterFeatures.push({
+          type: "Feature",
+          properties: tags,
+          geometry: { type: "LineString", coordinates: coords },
+        });
+      }
     } else if (tags["highway"] && MINOR_ROAD_TYPES.has(tags["highway"])) {
       if (coords.length < 2) continue;
       minorRoadFeatures.push({
-        type: "Feature", properties: tags,
+        type: "Feature",
+        properties: tags,
         geometry: { type: "LineString", coordinates: coords },
       });
     } else if (tags["highway"] && MAJOR_ROAD_TYPES.has(tags["highway"])) {
       if (coords.length < 2) continue;
       majorRoadFeatures.push({
-        type: "Feature", properties: tags,
+        type: "Feature",
+        properties: tags,
         geometry: { type: "LineString", coordinates: coords },
       });
     }

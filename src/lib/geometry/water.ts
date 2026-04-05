@@ -22,17 +22,22 @@ function clipResultToFeature(result: any): Feature<MultiPolygon> {
   };
 }
 
+// Minimum water polygon area in square metres — filters ponds/puddles too tiny to matter
+const MIN_WATER_AREA_M2 = 200;
+
 export function unionWaterPolygons(
   features: Feature<Polygon | MultiPolygon | LineString>[],
   bboxPolygon: Feature<Polygon>
 ): Feature<MultiPolygon> | null {
-  // Buffer open LineString waterways (rivers, streams) into polygons
   const polygonFeatures: Feature<Polygon | MultiPolygon>[] = [];
 
   for (const f of features) {
     if (f.geometry.type === "LineString") {
+      // Rivers / streams: buffer into polygon with width proportional to waterway type
+      const waterway = (f.properties as Record<string, string>)?.waterway ?? "";
+      const bufferKm = ["river"].includes(waterway) ? 0.03 : 0.015;
       try {
-        const buffered = turf.buffer(f as Feature<LineString>, 0.015, {
+        const buffered = turf.buffer(f as Feature<LineString>, bufferKm, {
           units: "kilometers",
           steps: 4,
         });
@@ -41,6 +46,13 @@ export function unionWaterPolygons(
         // skip malformed
       }
     } else {
+      // Filter out tiny water polygons (measurement artifacts, micro-ponds)
+      try {
+        const areaSqM = turf.area(f);
+        if (areaSqM < MIN_WATER_AREA_M2) continue;
+      } catch {
+        // if area check fails, include it anyway
+      }
       polygonFeatures.push(f as Feature<Polygon | MultiPolygon>);
     }
   }
