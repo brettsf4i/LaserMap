@@ -48,9 +48,9 @@ export async function exportLayersAsZip(
     ? [
         "",
         "Border / Registration:",
-        `  Inset: ${border.insetMm} mm from edge`,
-        `  Corner marks: ${border.cornerMarks ? "yes (3 mm dowel-pin holes)" : "no"}`,
-        "  The border rectangle is identical on all layers — align edges when stacking.",
+        `  Frame thickness: ${border.thicknessMm.toFixed(2)} mm (${(border.thicknessMm / 25.4).toFixed(3)} in)`,
+        `  Corner marks: ${border.cornerMarks ? "yes (3 mm dowel-pin holes in frame)" : "no"}`,
+        "  The solid frame is identical on all layers — stack and align edges for registration.",
       ].join("\n")
     : "";
 

@@ -49,9 +49,9 @@ export interface AppStore {
 
   // Border / registration
   borderEnabled: boolean;
-  borderInsetMm: number;
+  borderThicknessMm: number;
   cornerMarksEnabled: boolean;
   setBorderEnabled: (v: boolean) => void;
-  setBorderInsetMm: (mm: number) => void;
+  setBorderThicknessMm: (mm: number) => void;
   setCornerMarksEnabled: (v: boolean) => void;
 }

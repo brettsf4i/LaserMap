@@ -6,24 +6,32 @@ import { mmToDisplay, displayToMm } from "@/lib/units";
 export default function BorderControls() {
   const {
     borderEnabled,
-    borderInsetMm,
+    borderThicknessMm,
     cornerMarksEnabled,
     unit,
     setBorderEnabled,
-    setBorderInsetMm,
+    setBorderThicknessMm,
     setCornerMarksEnabled,
   } = useAppStore();
 
-  const displayInset = parseFloat(
-    mmToDisplay(borderInsetMm, unit).toFixed(unit === "in" ? 2 : 1)
+  // Convert internal mm to display unit
+  const displayThickness = parseFloat(
+    mmToDisplay(borderThicknessMm, unit).toFixed(unit === "in" ? 2 : 1)
   );
-  const insetStep = unit === "in" ? 0.05 : 0.5;
-  const insetMin = 0;
-  const insetMax = unit === "in" ? 0.5 : 10;
+
+  const step = unit === "in" ? 0.05 : 1;
+  const min  = unit === "in" ? 0.1  : 2;
+  const max  = unit === "in" ? 2    : 50;
+
+  const handleThicknessChange = (raw: number) => {
+    if (!isNaN(raw) && raw >= 0) {
+      setBorderThicknessMm(displayToMm(raw, unit));
+    }
+  };
 
   return (
     <div className="flex flex-col gap-3">
-      {/* Header row with on/off toggle */}
+      {/* ── Header with toggle ── */}
       <div className="flex items-center justify-between">
         <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide">
           Border &amp; Registration
@@ -44,49 +52,43 @@ export default function BorderControls() {
         </button>
       </div>
 
-      {/* Settings — only shown when border is enabled */}
+      {/* ── Settings (visible only when enabled) ── */}
       {borderEnabled && (
         <div className="flex flex-col gap-3 pl-1">
-          {/* Inset */}
+
+          {/* Border thickness */}
           <div>
             <div className="flex items-center justify-between mb-1.5">
-              <label className="text-sm text-gray-700">Frame inset</label>
+              <label className="text-sm text-gray-700">Border thickness</label>
               <div className="flex items-center gap-1">
                 <input
                   type="number"
-                  min={insetMin}
-                  max={insetMax}
-                  step={insetStep}
-                  value={displayInset}
-                  onChange={(e) => {
-                    const raw = Number(e.target.value);
-                    if (!isNaN(raw) && raw >= 0) {
-                      setBorderInsetMm(displayToMm(raw, unit));
-                    }
-                  }}
+                  min={min}
+                  max={max}
+                  step={step}
+                  value={displayThickness}
+                  onChange={(e) => handleThicknessChange(Number(e.target.value))}
                   className="w-16 border border-gray-300 rounded px-2 py-1 text-sm text-right focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
-                <span className="text-xs text-gray-400">{unit}</span>
+                <span className="text-xs text-gray-400 w-5">{unit}</span>
               </div>
             </div>
             <input
               type="range"
-              min={insetMin}
-              max={insetMax}
-              step={insetStep}
-              value={displayInset}
-              onChange={(e) =>
-                setBorderInsetMm(displayToMm(Number(e.target.value), unit))
-              }
+              min={min}
+              max={max}
+              step={step}
+              value={displayThickness}
+              onChange={(e) => handleThicknessChange(Number(e.target.value))}
               className="w-full accent-blue-600"
             />
             <div className="flex justify-between text-xs text-gray-400 mt-0.5">
-              <span>0 {unit}</span>
-              <span>{insetMax} {unit}</span>
+              <span>{min} {unit}</span>
+              <span>{max} {unit}</span>
             </div>
           </div>
 
-          {/* Corner marks */}
+          {/* Corner registration marks */}
           <label className="flex items-start gap-2.5 cursor-pointer select-none">
             <span className="relative flex-shrink-0 mt-0.5">
               <input
@@ -112,15 +114,17 @@ export default function BorderControls() {
             <div>
               <p className="text-sm text-gray-700 leading-tight">Corner registration marks</p>
               <p className="text-xs text-gray-400 mt-0.5">
-                3 mm circles at each corner — use with dowel pins for precise stacking.
+                Circular holes in the frame corners — use with 3 mm dowel pins for precise stacking.
               </p>
             </div>
           </label>
 
           {/* Info note */}
-          <p className="text-xs text-gray-400 bg-gray-50 rounded-md px-3 py-2 leading-snug">
-            The border is cut identically on all three layers. Stack the pieces and align the edges for perfect registration.
-          </p>
+          <div className="text-xs text-gray-400 bg-gray-50 rounded-md px-3 py-2 leading-snug space-y-1">
+            <p>The solid frame band is cut identically on all three layers.</p>
+            <p>Stack the pieces and align the outer edges for perfect registration.</p>
+          </div>
+
         </div>
       )}
     </div>

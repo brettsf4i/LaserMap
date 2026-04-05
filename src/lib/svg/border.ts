@@ -1,73 +1,106 @@
 /**
  * Border & registration-mark helpers.
  *
- * The border is always rendered as a cut line (red stroke, no fill) so it
- * is physically cut on every layer — giving perfectly aligned edges when
- * the pieces are stacked.
+ * The border is a solid filled frame — an outer rectangle with a rectangular
+ * hole cut out of the centre (fill-rule="evenodd").  It is identical on every
+ * exported layer so the pieces stack with perfectly aligned edges.
+ *
+ * Corner registration marks (optional) are circular holes punched through
+ * the frame band.  Use 3 mm dowel pins for precise layer stacking.
  */
 
 export interface BorderOptions {
   /** Whether to add the border at all */
   enabled: boolean;
-  /** Distance in mm from the SVG edge to the border rectangle */
-  insetMm: number;
-  /** Whether to add small circles at the border corners for pin registration */
+  /** Frame band width in mm (the solid area between the outer and inner edges) */
+  thicknessMm: number;
+  /** Whether to punch registration circles at the four inner corners */
   cornerMarks: boolean;
 }
 
-/** Radius of corner-mark circles in mm (fits a standard 3 mm dowel pin) */
-const CORNER_MARK_RADIUS_MM = 1.5;
-
-/** Stroke style shared by all border / registration elements */
-const BORDER_STROKE = `fill="none" stroke="#FF0000" stroke-width="0.1" vector-effect="non-scaling-stroke"`;
-
 /**
- * Returns SVG element strings (ready to embed inside <svg>) that represent
- * the border rectangle and, optionally, four corner registration circles.
+ * Builds an SVG <path> for a solid frame using the even-odd fill rule.
  *
- * @param width  SVG viewport width in mm
- * @param height SVG viewport height in mm
- * @param opts   Border configuration
+ * Outer ring  = full SVG canvas (0,0 → width,height)
+ * Inner hole  = inset by thicknessMm on all sides
+ * Corner holes = circles centred at each inner corner, radius = thicknessMm/4
+ *                (clamped to 3 mm max so they always fit within the band)
  */
 export function buildBorderSVGElements(
   width: number,
   height: number,
   opts: BorderOptions
 ): string {
-  const { insetMm, cornerMarks } = opts;
+  const { thicknessMm, cornerMarks } = opts;
+  const T = thicknessMm;
 
-  const x = insetMm;
-  const y = insetMm;
-  const w = width - 2 * insetMm;
-  const h = height - 2 * insetMm;
+  const innerX = T;
+  const innerY = T;
+  const innerW = width - 2 * T;
+  const innerH = height - 2 * T;
 
-  if (w <= 0 || h <= 0) return "";
+  if (innerW <= 0 || innerH <= 0) return "";
 
-  const fx = x.toFixed(4);
-  const fy = y.toFixed(4);
-  const fw = w.toFixed(4);
-  const fh = h.toFixed(4);
+  // ── Outer rectangle (clockwise) ──────────────────────────────────────────
+  const outer = [
+    `M 0,0`,
+    `L ${f(width)},0`,
+    `L ${f(width)},${f(height)}`,
+    `L 0,${f(height)}`,
+    `Z`,
+  ].join(" ");
 
-  const lines: string[] = [
-    `  <!-- Border / alignment frame — identical on all layers -->`,
-    `  <rect id="border" x="${fx}" y="${fy}" width="${fw}" height="${fh}" ${BORDER_STROKE} />`,
-  ];
+  // ── Inner rectangle / hole (counter-clockwise for evenodd) ───────────────
+  const ix = f(innerX);
+  const iy = f(innerY);
+  const ix2 = f(innerX + innerW);
+  const iy2 = f(innerY + innerH);
 
+  const inner = [
+    `M ${ix},${iy}`,
+    `L ${ix},${iy2}`,
+    `L ${ix2},${iy2}`,
+    `L ${ix2},${iy}`,
+    `Z`,
+  ].join(" ");
+
+  // ── Corner registration holes (circles as arc paths, evenodd = holes) ────
+  let cornerPaths = "";
   if (cornerMarks) {
-    const r = CORNER_MARK_RADIUS_MM;
-    const corners: [number, number, string][] = [
-      [x, y, "tl"],
-      [x + w, y, "tr"],
-      [x, y + h, "bl"],
-      [x + w, y + h, "br"],
+    const r = Math.min(T / 4, 3); // radius capped at 3 mm
+
+    // Circle centres sit at each inner-rectangle corner
+    const centres: [number, number][] = [
+      [innerX,          innerY],           // top-left
+      [innerX + innerW, innerY],           // top-right
+      [innerX,          innerY + innerH],  // bottom-left
+      [innerX + innerW, innerY + innerH],  // bottom-right
     ];
-    lines.push(`  <!-- Corner registration marks (r=${r}mm — 3 mm dowel pins) -->`);
-    for (const [cx, cy, id] of corners) {
-      lines.push(
-        `  <circle id="corner-${id}" cx="${cx.toFixed(4)}" cy="${cy.toFixed(4)}" r="${r}" ${BORDER_STROKE} />`
-      );
+
+    for (const [cx, cy] of centres) {
+      // Full circle as two half-arcs (sweep-flag 0 = counter-clockwise → hole)
+      cornerPaths +=
+        ` M ${f(cx + r)},${f(cy)}` +
+        ` A ${r},${r} 0 1 0 ${f(cx - r)},${f(cy)}` +
+        ` A ${r},${r} 0 1 0 ${f(cx + r)},${f(cy)} Z`;
     }
   }
 
-  return lines.join("\n");
+  const d = `${outer} ${inner}${cornerPaths}`.trim();
+
+  return [
+    `  <!-- Solid border frame — identical on all layers (fill-rule evenodd) -->`,
+    `  <path`,
+    `    id="border-frame"`,
+    `    d="${d}"`,
+    `    fill="#FF0000"`,
+    `    stroke="none"`,
+    `    fill-rule="evenodd"`,
+    `  />`,
+  ].join("\n");
+}
+
+/** Fixed-decimal formatter (4 dp, trims trailing zeros) */
+function f(n: number): string {
+  return parseFloat(n.toFixed(4)).toString();
 }
