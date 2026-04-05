@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef } from "react";
+import { useRef, type RefObject } from "react";
 import { useAppStore } from "@/lib/store";
 import { buildCombinedQuery } from "@/lib/overpass/queries";
 import {
@@ -11,16 +11,22 @@ import {
 import { fetchOverpass } from "@/lib/overpass/client";
 import { runGeometryPipeline } from "@/lib/geometry/pipeline";
 import { exportLayersAsZip } from "@/lib/export/zip";
+import type { MapCanvasHandle } from "@/components/map/MapCanvas";
+import DrawControls from "./DrawControls";
 import LayerToggles from "./LayerToggles";
 import RoadControls from "./RoadControls";
 import SizeControls from "./SizeControls";
 import StatusBar from "./StatusBar";
 
+interface Props {
+  mapRef: RefObject<MapCanvasHandle | null>;
+}
+
 // Cache parsed OSM features so slider changes only re-run geometry, not network
 let cachedLayers: CombinedLayers | null = null;
 let cachedBboxKey: string | null = null;
 
-export default function ControlPanel() {
+export default function ControlPanel({ mapRef }: Props) {
   const store = useAppStore();
   const regenTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -136,6 +142,8 @@ export default function ControlPanel() {
         )}
       </div>
 
+      <div className="border-t border-gray-100" />
+      <DrawControls mapRef={mapRef} />
       <div className="border-t border-gray-100" />
       <LayerToggles />
       <div className="border-t border-gray-100" />

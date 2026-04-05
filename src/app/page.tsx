@@ -30,7 +30,7 @@ export default function Home() {
       </div>
 
       {/* Control sidebar */}
-      <ControlPanel />
+      <ControlPanel mapRef={mapCanvasRef} />
     </main>
   );
 }
