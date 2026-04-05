@@ -16,6 +16,7 @@ import DrawControls from "./DrawControls";
 import LayerToggles from "./LayerToggles";
 import RoadControls from "./RoadControls";
 import SizeControls from "./SizeControls";
+import BorderControls from "./BorderControls";
 import StatusBar from "./StatusBar";
 
 interface Props {
@@ -103,7 +104,14 @@ export default function ControlPanel({ mapRef }: Props) {
     if (!store.bbox || store.status !== "ready") return;
     store.setIsExporting(true);
     try {
-      await exportLayersAsZip(store.processed, store.bbox, store.widthMm);
+      await exportLayersAsZip(store.processed, store.bbox, {
+        widthMm: store.widthMm,
+        border: {
+          enabled: store.borderEnabled,
+          insetMm: store.borderInsetMm,
+          cornerMarks: store.cornerMarksEnabled,
+        },
+      });
     } finally {
       store.setIsExporting(false);
     }
@@ -154,6 +162,8 @@ export default function ControlPanel({ mapRef }: Props) {
 
       <div className="border-t border-gray-100" />
       <SizeControls />
+      <div className="border-t border-gray-100" />
+      <BorderControls />
       <div className="border-t border-gray-100" />
       <StatusBar />
 

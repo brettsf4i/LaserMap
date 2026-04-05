@@ -1,5 +1,6 @@
 import type { Feature, MultiPolygon, MultiLineString, Position } from "geojson";
 import type { Projection } from "./projection";
+import type { BorderOptions } from "./border";
 import { buildSVGDocument } from "./builder";
 
 function polygonRingToPath(ring: Position[], proj: Projection): string {
@@ -34,36 +35,42 @@ function multiLineStringToPath(geom: MultiLineString, proj: Projection): string 
 
 export function generateCutLayerSVG(
   feature: Feature<MultiPolygon>,
-  proj: Projection
+  proj: Projection,
+  border?: BorderOptions
 ): string {
   const d = multiPolygonToPath(feature.geometry, proj);
   return buildSVGDocument(
     [{ id: "cut-layer", pathData: d, style: "cut" }],
     proj.width,
-    proj.height
+    proj.height,
+    border
   );
 }
 
 export function generateEngraveLayerSVG(
   feature: Feature<MultiLineString>,
-  proj: Projection
+  proj: Projection,
+  border?: BorderOptions
 ): string {
   const d = multiLineStringToPath(feature.geometry, proj);
   return buildSVGDocument(
     [{ id: "engrave-layer", pathData: d, style: "engrave" }],
     proj.width,
-    proj.height
+    proj.height,
+    border
   );
 }
 
 export function generateTopCutLayerSVG(
   feature: Feature<MultiPolygon>,
-  proj: Projection
+  proj: Projection,
+  border?: BorderOptions
 ): string {
   const d = multiPolygonToPath(feature.geometry, proj);
   return buildSVGDocument(
     [{ id: "topcut-layer", pathData: d, style: "topcut" }],
     proj.width,
-    proj.height
+    proj.height,
+    border
   );
 }

@@ -46,4 +46,12 @@ export interface AppStore {
   setRoadBuffer: (meters: number) => void;
   setIsExporting: (v: boolean) => void;
   setUnit: (unit: Unit) => void;
+
+  // Border / registration
+  borderEnabled: boolean;
+  borderInsetMm: number;
+  cornerMarksEnabled: boolean;
+  setBorderEnabled: (v: boolean) => void;
+  setBorderInsetMm: (mm: number) => void;
+  setCornerMarksEnabled: (v: boolean) => void;
 }

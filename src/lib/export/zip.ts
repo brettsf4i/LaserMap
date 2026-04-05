@@ -2,37 +2,57 @@ import JSZip from "jszip";
 import { saveAs } from "file-saver";
 import type { ProcessedLayers, BBox } from "@/lib/store/types";
 import { createProjection } from "@/lib/svg/projection";
+import type { BorderOptions } from "@/lib/svg/border";
 import {
   generateCutLayerSVG,
   generateEngraveLayerSVG,
   generateTopCutLayerSVG,
 } from "@/lib/svg/layers";
 
+export interface ExportOptions {
+  widthMm: number;
+  border: BorderOptions;
+}
+
 export async function exportLayersAsZip(
   layers: ProcessedLayers,
   bbox: BBox,
-  widthMm: number,
+  opts: ExportOptions,
   filename = "laser-map"
 ): Promise<void> {
+  const { widthMm, border } = opts;
   const proj = createProjection({ bbox, widthMm });
   const zip = new JSZip();
   const folder = zip.folder("layers")!;
 
   if (layers.cutLayer) {
-    folder.file("01_cut_layer.svg", generateCutLayerSVG(layers.cutLayer, proj));
+    folder.file(
+      "01_cut_layer.svg",
+      generateCutLayerSVG(layers.cutLayer, proj, border)
+    );
   }
   if (layers.engraveLayer) {
     folder.file(
       "02_engrave_layer.svg",
-      generateEngraveLayerSVG(layers.engraveLayer, proj)
+      generateEngraveLayerSVG(layers.engraveLayer, proj, border)
     );
   }
   if (layers.topCutLayer) {
     folder.file(
       "03_top_cut_layer.svg",
-      generateTopCutLayerSVG(layers.topCutLayer, proj)
+      generateTopCutLayerSVG(layers.topCutLayer, proj, border)
     );
   }
+
+  const borderNote = border.enabled
+    ? [
+        "",
+        "Border / Registration:",
+        `  Inset: ${border.insetMm} mm from edge`,
+        `  Corner marks: ${border.cornerMarks ? "yes (3 mm dowel-pin holes)" : "no"}`,
+        "  The border rectangle is identical on all layers — align edges when stacking.",
+      ].join("\n")
+    : "";
 
   const readme = [
     "Laser Map Export",
@@ -45,6 +65,7 @@ export async function exportLayersAsZip(
     "  01_cut_layer.svg      - Land/water boundary. CUT with full power (red, filled).",
     "  02_engrave_layer.svg  - Minor roads. ENGRAVE as hairline (black, stroke only).",
     "  03_top_cut_layer.svg  - Major roads buffered to polygons. CUT top layer (red, filled).",
+    borderNote,
     "",
     "Import each SVG separately into your laser software (LightBurn, RDWorks, etc.).",
     "Set SVG document units to mm. Do NOT scale when importing.",

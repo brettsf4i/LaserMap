@@ -1,3 +1,5 @@
+import { buildBorderSVGElements, type BorderOptions } from "./border";
+
 export type LayerStyle = "cut" | "engrave" | "topcut";
 
 export interface SVGLayer {
@@ -33,7 +35,8 @@ const STYLE_MAP: Record<
 export function buildSVGDocument(
   layers: SVGLayer[],
   width: number,
-  height: number
+  height: number,
+  border?: BorderOptions
 ): string {
   const paths = layers
     .map((layer) => {
@@ -50,6 +53,12 @@ export function buildSVGDocument(
     })
     .join("\n");
 
+  // Border elements sit after the map content so they render on top
+  const borderElements =
+    border?.enabled
+      ? "\n" + buildBorderSVGElements(width, height, border)
+      : "";
+
   return `<?xml version="1.0" encoding="UTF-8"?>
 <svg
   xmlns="http://www.w3.org/2000/svg"
@@ -57,6 +66,6 @@ export function buildSVGDocument(
   height="${height.toFixed(4)}mm"
   viewBox="0 0 ${width.toFixed(4)} ${height.toFixed(4)}"
 >
-${paths}
+${paths}${borderElements}
 </svg>`;
 }

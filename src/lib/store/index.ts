@@ -37,6 +37,14 @@ export const useAppStore = create<AppStore>()(
       setRoadBuffer: (roadBufferMeters) => set({ roadBufferMeters }),
       setIsExporting: (isExporting) => set({ isExporting }),
       setUnit: (unit) => set({ unit }),
+
+      // Border / registration
+      borderEnabled: false,
+      borderInsetMm: 2,
+      cornerMarksEnabled: false,
+      setBorderEnabled: (borderEnabled) => set({ borderEnabled }),
+      setBorderInsetMm: (borderInsetMm) => set({ borderInsetMm }),
+      setCornerMarksEnabled: (cornerMarksEnabled) => set({ cornerMarksEnabled }),
     }),
     { name: "LaserMapStore" }
   )
