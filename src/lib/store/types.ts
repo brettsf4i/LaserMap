@@ -1,4 +1,5 @@
 import type { Feature, MultiPolygon, MultiLineString, Polygon } from "geojson";
+import type { Unit } from "@/lib/units";
 
 export type BBox = [west: number, south: number, east: number, north: number];
 
@@ -39,8 +40,10 @@ export interface AppStore {
   simplificationTolerance: number;
   roadBufferMeters: number;
   isExporting: boolean;
+  unit: Unit;
   setWidthMm: (mm: number) => void;
   setSimplification: (tolerance: number) => void;
   setRoadBuffer: (meters: number) => void;
   setIsExporting: (v: boolean) => void;
+  setUnit: (unit: Unit) => void;
 }

@@ -1,6 +1,7 @@
 "use client";
 
 import { useAppStore } from "@/lib/store";
+import { metersToDisplay } from "@/lib/units";
 
 const LOG_MIN = Math.log10(0.000005);
 const LOG_MAX = Math.log10(0.001);
@@ -19,6 +20,7 @@ export default function RoadControls() {
     simplificationTolerance,
     setRoadBuffer,
     setSimplification,
+    unit,
   } = useAppStore();
 
   return (
@@ -32,7 +34,7 @@ export default function RoadControls() {
           <label className="text-sm font-medium text-gray-700">
             Major Road Width
           </label>
-          <span className="text-sm text-gray-500">{roadBufferMeters}m</span>
+          <span className="text-sm text-gray-500">{metersToDisplay(roadBufferMeters, unit)}</span>
         </div>
         <input
           type="range"
@@ -44,8 +46,8 @@ export default function RoadControls() {
           className="w-full accent-orange-500"
         />
         <div className="flex justify-between text-xs text-gray-400 mt-0.5">
-          <span>3m</span>
-          <span>50m</span>
+          <span>{metersToDisplay(3, unit)}</span>
+          <span>{metersToDisplay(50, unit)}</span>
         </div>
       </div>
 

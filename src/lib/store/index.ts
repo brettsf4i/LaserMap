@@ -30,11 +30,13 @@ export const useAppStore = create<AppStore>()(
       simplificationTolerance: 0.0001,
       roadBufferMeters: 12,
       isExporting: false,
+      unit: "mm",
       setWidthMm: (widthMm) => set({ widthMm }),
       setSimplification: (simplificationTolerance) =>
         set({ simplificationTolerance }),
       setRoadBuffer: (roadBufferMeters) => set({ roadBufferMeters }),
       setIsExporting: (isExporting) => set({ isExporting }),
+      setUnit: (unit) => set({ unit }),
     }),
     { name: "LaserMapStore" }
   )
