@@ -7,8 +7,8 @@ export default function LayerToggles() {
 
   const layers = [
     { key: "cut" as const,    label: "Cut Layer",    color: "bg-blue-400",   description: "Land/water boundary" },
-    { key: "engrave" as const, label: "Engrave Layer", color: "bg-gray-500", description: "Residential & unclassified roads" },
-    { key: "topCut" as const,  label: "Major Roads",  color: "bg-orange-400", description: "All other roads (cut)" },
+    { key: "engrave" as const, label: "Engrave Layer", color: "bg-gray-500", description: "Minor roads" },
+    { key: "topCut" as const,  label: "Major Roads",  color: "bg-orange-400", description: "Primary & secondary roads (cut)" },
   ];
 
   return (

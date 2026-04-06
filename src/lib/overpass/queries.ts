@@ -5,20 +5,19 @@ function toOverpassBBox(bbox: BBox): string {
   return `${bbox[1]},${bbox[0]},${bbox[3]},${bbox[2]}`;
 }
 
-// Only the two lowest-detail classes stay on the engrave layer.
-// Everything else is buffered and cut on the Major Roads layer.
-export const MINOR_ROAD_TYPES = new Set([
-  "residential", "unclassified",
-]);
-
+// Major Roads cut layer: primary (red) and secondary (orange) roads only.
+// Keeping this set small avoids the buffer+union timeout on dense urban areas.
 export const MAJOR_ROAD_TYPES = new Set([
-  // Classified roads
-  "motorway", "motorway_link",
-  "trunk", "trunk_link",
   "primary", "primary_link",
   "secondary", "secondary_link",
+]);
+
+// Engrave layer: everything else worth showing as a hairline.
+export const MINOR_ROAD_TYPES = new Set([
+  "motorway", "motorway_link",
+  "trunk", "trunk_link",
   "tertiary", "tertiary_link",
-  // Local access & paths — included so the cut layer shows full detail
+  "residential", "unclassified",
   "service", "living_street",
   "pedestrian", "footway", "cycleway", "path", "track",
 ]);
@@ -28,9 +27,8 @@ export const WATER_TAGS: Record<string, string | null> = {
   "landuse": "reservoir",
 };
 
-// Single combined query fetching all layers at once — avoids rate limiting.
-// Relations are included so that large rivers/lakes (stored as OSM multipolygons)
-// are captured as full-surface polygons rather than just centerlines.
+// Single combined query — avoids rate limiting.
+// Relations fetch large rivers/lakes as full-surface polygons.
 export function buildCombinedQuery(bbox: BBox): string {
   const bb = toOverpassBBox(bbox);
   return `
@@ -45,8 +43,8 @@ export function buildCombinedQuery(bbox: BBox): string {
   way["natural"="wetland"](${bb});
   way["water"~"."](${bb});
   relation["water"~"."](${bb});
-  way["highway"~"^(residential|unclassified)$"](${bb});
-  way["highway"~"^(motorway|motorway_link|trunk|trunk_link|primary|primary_link|secondary|secondary_link|tertiary|tertiary_link|service|living_street|pedestrian|footway|cycleway|path|track)$"](${bb});
+  way["highway"~"^(primary|primary_link|secondary|secondary_link)$"](${bb});
+  way["highway"~"^(motorway|motorway_link|trunk|trunk_link|tertiary|tertiary_link|residential|unclassified|service|living_street|pedestrian|footway|cycleway|path|track)$"](${bb});
 );
 out body;
 >;
