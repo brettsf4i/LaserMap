@@ -52,6 +52,7 @@ export default function ControlPanel({ mapRef }: Props) {
         majorRoadFeatures: layers.majorRoadFeatures,
         simplificationTolerance: store.simplificationTolerance,
         roadBufferMeters: store.roadBufferMeters,
+        majorRoadClasses: store.majorRoadClasses,
       });
       store.setProcessed(processed);
       store.setStatus("ready");

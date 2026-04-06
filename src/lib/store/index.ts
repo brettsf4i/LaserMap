@@ -31,12 +31,16 @@ export const useAppStore = create<AppStore>()(
       roadBufferMeters: 12,
       isExporting: false,
       unit: "mm",
+      // Default: motorway + trunk + primary + secondary (the 4 prominent classes).
+      // Tertiary is available but off by default — user can enable per project.
+      majorRoadClasses: ["motorway", "trunk", "primary", "secondary"],
       setWidthMm: (widthMm) => set({ widthMm }),
       setSimplification: (simplificationTolerance) =>
         set({ simplificationTolerance }),
       setRoadBuffer: (roadBufferMeters) => set({ roadBufferMeters }),
       setIsExporting: (isExporting) => set({ isExporting }),
       setUnit: (unit) => set({ unit }),
+      setMajorRoadClasses: (majorRoadClasses) => set({ majorRoadClasses }),
 
       // Border / registration
       borderEnabled: false,

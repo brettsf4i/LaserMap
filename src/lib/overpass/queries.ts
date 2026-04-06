@@ -5,18 +5,34 @@ function toOverpassBBox(bbox: BBox): string {
   return `${bbox[1]},${bbox[0]},${bbox[3]},${bbox[2]}`;
 }
 
-// Major Roads cut layer: primary (red) and secondary (orange) roads only.
-// Keeping this set small avoids the buffer+union timeout on dense urban areas.
-export const MAJOR_ROAD_TYPES = new Set([
-  "primary", "primary_link",
-  "secondary", "secondary_link",
-]);
+// ── Road class definitions ────────────────────────────────────────────────────
+// Single source of truth for the 5 major road classes.
+// Used by the Overpass query builder, the geometry pipeline, and the UI.
 
-// Engrave layer: everything else worth showing as a hairline.
+export interface RoadClassDef {
+  key: string;
+  label: string;
+  /** Standard OSM rendering colour for this road class */
+  osmColor: string;
+  /** All OSM highway= values that belong to this class */
+  types: string[];
+}
+
+export const ROAD_CLASS_DEFS: RoadClassDef[] = [
+  { key: "motorway",  label: "Motorway",  osmColor: "#6b80c8", types: ["motorway",  "motorway_link"]  },
+  { key: "trunk",     label: "Trunk",     osmColor: "#7db87d", types: ["trunk",     "trunk_link"]     },
+  { key: "primary",   label: "Primary",   osmColor: "#d45b5b", types: ["primary",   "primary_link"]   },
+  { key: "secondary", label: "Secondary", osmColor: "#d9892b", types: ["secondary", "secondary_link"] },
+  { key: "tertiary",  label: "Tertiary",  osmColor: "#c8b74a", types: ["tertiary",  "tertiary_link"]  },
+];
+
+// All OSM types that can appear on the Major Roads cut layer
+export const MAJOR_ROAD_TYPES = new Set<string>(
+  ROAD_CLASS_DEFS.flatMap((d) => d.types)
+);
+
+// Roads rendered as engraved hairlines (not buffered/cut)
 export const MINOR_ROAD_TYPES = new Set([
-  "motorway", "motorway_link",
-  "trunk", "trunk_link",
-  "tertiary", "tertiary_link",
   "residential", "unclassified",
   "service", "living_street",
   "pedestrian", "footway", "cycleway", "path", "track",
@@ -27,10 +43,17 @@ export const WATER_TAGS: Record<string, string | null> = {
   "landuse": "reservoir",
 };
 
-// Single combined query — avoids rate limiting.
-// Relations fetch large rivers/lakes as full-surface polygons.
+// ── Query builder ─────────────────────────────────────────────────────────────
+// Always fetches ALL five named major-road classes so that changing which
+// classes are rendered only re-runs geometry (no extra network round-trip).
+// The ["name"] filter eliminates unnamed link ramps, parking-lot connectors,
+// and short stubs that cause isolated blobs in the cut layer.
+
 export function buildCombinedQuery(bbox: BBox): string {
   const bb = toOverpassBBox(bbox);
+  const majorRegex = ROAD_CLASS_DEFS.flatMap((d) => d.types).join("|");
+  const minorRegex = [...MINOR_ROAD_TYPES].join("|");
+
   return `
 [out:json][timeout:60];
 (
@@ -43,8 +66,8 @@ export function buildCombinedQuery(bbox: BBox): string {
   way["natural"="wetland"](${bb});
   way["water"~"."](${bb});
   relation["water"~"."](${bb});
-  way["highway"~"^(primary|primary_link|secondary|secondary_link)$"](${bb});
-  way["highway"~"^(motorway|motorway_link|trunk|trunk_link|tertiary|tertiary_link|residential|unclassified|service|living_street|pedestrian|footway|cycleway|path|track)$"](${bb});
+  way["highway"~"^(${majorRegex})$"]["name"](${bb});
+  way["highway"~"^(${minorRegex})$"](${bb});
 );
 out body;
 >;
