@@ -5,15 +5,22 @@ function toOverpassBBox(bbox: BBox): string {
   return `${bbox[1]},${bbox[0]},${bbox[3]},${bbox[2]}`;
 }
 
+// Only the two lowest-detail classes stay on the engrave layer.
+// Everything else is buffered and cut on the Major Roads layer.
 export const MINOR_ROAD_TYPES = new Set([
-  "residential", "unclassified", "service", "living_street",
-  "pedestrian", "footway", "cycleway", "path", "track",
+  "residential", "unclassified",
 ]);
 
 export const MAJOR_ROAD_TYPES = new Set([
-  "motorway", "motorway_link", "trunk", "trunk_link",
-  "primary", "primary_link", "secondary", "secondary_link",
+  // Classified roads
+  "motorway", "motorway_link",
+  "trunk", "trunk_link",
+  "primary", "primary_link",
+  "secondary", "secondary_link",
   "tertiary", "tertiary_link",
+  // Local access & paths — included so the cut layer shows full detail
+  "service", "living_street",
+  "pedestrian", "footway", "cycleway", "path", "track",
 ]);
 
 export const WATER_TAGS: Record<string, string | null> = {
@@ -38,8 +45,8 @@ export function buildCombinedQuery(bbox: BBox): string {
   way["natural"="wetland"](${bb});
   way["water"~"."](${bb});
   relation["water"~"."](${bb});
-  way["highway"~"^(residential|unclassified|service|living_street|pedestrian|footway|cycleway|path|track)$"](${bb});
-  way["highway"~"^(motorway|motorway_link|trunk|trunk_link|primary|primary_link|secondary|secondary_link|tertiary|tertiary_link)$"](${bb});
+  way["highway"~"^(residential|unclassified)$"](${bb});
+  way["highway"~"^(motorway|motorway_link|trunk|trunk_link|primary|primary_link|secondary|secondary_link|tertiary|tertiary_link|service|living_street|pedestrian|footway|cycleway|path|track)$"](${bb});
 );
 out body;
 >;

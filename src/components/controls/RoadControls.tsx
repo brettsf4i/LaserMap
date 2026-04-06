@@ -32,7 +32,7 @@ export default function RoadControls() {
       <div>
         <div className="flex justify-between mb-1">
           <label className="text-sm font-medium text-gray-700">
-            Major Road Width
+            Road Width
           </label>
           <span className="text-sm text-gray-500">{metersToDisplay(roadBufferMeters, unit)}</span>
         </div>
