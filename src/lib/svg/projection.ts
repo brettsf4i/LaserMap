@@ -3,6 +3,8 @@ import type { BBox } from "@/lib/store/types";
 export interface Projection {
   width: number;
   height: number;
+  /** Geographic bounding box [west, south, east, north] — used by layers.ts for inner-clip */
+  bbox: BBox;
   project: (lon: number, lat: number) => [number, number];
 }
 
@@ -34,5 +36,5 @@ export function createProjection(params: {
     return [x, y];
   };
 
-  return { width: widthMm, height: heightMm, project };
+  return { width: widthMm, height: heightMm, bbox, project };
 }

@@ -1,33 +1,23 @@
 "use client";
 
 import { useAppStore } from "@/lib/store";
-import { mmToDisplay, displayToMm } from "@/lib/units";
+import { mmToDisplay } from "@/lib/units";
 
 export default function BorderControls() {
   const {
     borderEnabled,
-    borderThicknessMm,
     cornerMarksEnabled,
+    widthMm,
     unit,
     setBorderEnabled,
-    setBorderThicknessMm,
     setCornerMarksEnabled,
   } = useAppStore();
 
-  // Convert internal mm to display unit
+  // Auto-computed thickness: 5% of map width (matches export logic in zip.ts)
+  const autoThicknessMm = widthMm * 0.05;
   const displayThickness = parseFloat(
-    mmToDisplay(borderThicknessMm, unit).toFixed(unit === "in" ? 2 : 1)
+    mmToDisplay(autoThicknessMm, unit).toFixed(unit === "in" ? 2 : 1)
   );
-
-  const step = unit === "in" ? 0.05 : 1;
-  const min  = unit === "in" ? 0.1  : 2;
-  const max  = unit === "in" ? 2    : 50;
-
-  const handleThicknessChange = (raw: number) => {
-    if (!isNaN(raw) && raw >= 0) {
-      setBorderThicknessMm(displayToMm(raw, unit));
-    }
-  };
 
   return (
     <div className="flex flex-col gap-3">
@@ -56,37 +46,17 @@ export default function BorderControls() {
       {borderEnabled && (
         <div className="flex flex-col gap-3 pl-1">
 
-          {/* Border thickness */}
-          <div>
-            <div className="flex items-center justify-between mb-1.5">
-              <label className="text-sm text-gray-700">Border thickness</label>
-              <div className="flex items-center gap-1">
-                <input
-                  type="number"
-                  min={min}
-                  max={max}
-                  step={step}
-                  value={displayThickness}
-                  onChange={(e) => handleThicknessChange(Number(e.target.value))}
-                  className="w-16 border border-gray-300 rounded px-2 py-1 text-sm text-right focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
-                <span className="text-xs text-gray-400 w-5">{unit}</span>
-              </div>
-            </div>
-            <input
-              type="range"
-              min={min}
-              max={max}
-              step={step}
-              value={displayThickness}
-              onChange={(e) => handleThicknessChange(Number(e.target.value))}
-              className="w-full accent-blue-600"
-            />
-            <div className="flex justify-between text-xs text-gray-400 mt-0.5">
-              <span>{min} {unit}</span>
-              <span>{max} {unit}</span>
-            </div>
+          {/* Auto-size info */}
+          <div className="flex items-center justify-between text-sm">
+            <span className="text-gray-700">Border thickness</span>
+            <span className="tabular-nums text-gray-500 font-medium">
+              {displayThickness}&thinsp;{unit}
+              <span className="text-gray-400 font-normal ml-1">(auto)</span>
+            </span>
           </div>
+          <p className="text-xs text-gray-400 -mt-1">
+            Automatically set to 5% of the map width so it scales with your project size.
+          </p>
 
           {/* Corner registration marks */}
           <label className="flex items-start gap-2.5 cursor-pointer select-none">

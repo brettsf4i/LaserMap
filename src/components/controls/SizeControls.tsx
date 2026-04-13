@@ -10,6 +10,15 @@ import {
   type Unit,
 } from "@/lib/units";
 
+// Common laser cutter bed widths (mm) with friendly labels
+const BED_PRESETS: { label: string; mm: number }[] = [
+  { label: "200 mm", mm: 200 },
+  { label: "300 mm", mm: 300 },
+  { label: "A4",     mm: 210 },
+  { label: "Letter", mm: 216 },
+  { label: "400 mm", mm: 400 },
+];
+
 export default function SizeControls() {
   const { widthMm, bbox, setWidthMm, unit, setUnit } = useAppStore();
 
@@ -25,6 +34,12 @@ export default function SizeControls() {
     heightMm !== null
       ? parseFloat(mmToDisplay(heightMm, unit).toFixed(unit === "in" ? 2 : 1))
       : null;
+
+  const handleWidthChange = (raw: number) => {
+    if (isNaN(raw)) return;
+    const clamped = Math.max(min, Math.min(max, raw));
+    setWidthMm(Math.round(displayToMm(clamped, unit)));
+  };
 
   return (
     <div className="flex flex-col gap-2">
@@ -50,12 +65,32 @@ export default function SizeControls() {
         </div>
       </div>
 
+      {/* ── Laser bed presets ── */}
+      <div>
+        <p className="text-xs text-gray-400 mb-1.5">Common laser bed widths:</p>
+        <div className="flex flex-wrap gap-1.5">
+          {BED_PRESETS.map(({ label, mm }) => (
+            <button
+              key={label}
+              onClick={() => setWidthMm(mm)}
+              title={`${mm} mm`}
+              className={`px-2 py-0.5 rounded-full text-xs font-medium border transition-colors ${
+                widthMm === mm
+                  ? "border-blue-400 bg-blue-50 text-blue-600"
+                  : "border-gray-200 text-gray-500 hover:border-gray-300 hover:text-gray-700"
+              }`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* ── Width / Height inputs ── */}
       <div className="flex items-center gap-2">
         {/* Width input */}
         <div className="flex-1">
-          <label className="text-xs text-gray-500 mb-1 block">
-            Width ({unit})
-          </label>
+          <label className="text-xs text-gray-500 mb-1 block">Width ({unit})</label>
           <input
             type="number"
             min={min}
@@ -68,6 +103,7 @@ export default function SizeControls() {
                 setWidthMm(Math.round(displayToMm(raw, unit)));
               }
             }}
+            onBlur={(e) => handleWidthChange(Number(e.target.value))}
             className="w-full border border-gray-300 rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
           />
         </div>
@@ -75,10 +111,8 @@ export default function SizeControls() {
         {/* Height (read-only) */}
         {displayHeight !== null && (
           <div className="flex-1">
-            <label className="text-xs text-gray-500 mb-1 block">
-              Height ({unit})
-            </label>
-            <div className="w-full border border-gray-200 rounded px-2 py-1.5 text-sm bg-gray-50 text-gray-600">
+            <label className="text-xs text-gray-500 mb-1 block">Height ({unit})</label>
+            <div className="w-full border border-gray-200 rounded px-2 py-1.5 text-sm bg-gray-50 text-gray-500 select-none">
               {displayHeight}
             </div>
           </div>
@@ -86,7 +120,12 @@ export default function SizeControls() {
       </div>
 
       <p className="text-xs text-gray-400">
-        Height is computed from the aspect ratio of your selected area.
+        Height is calculated automatically from your selected area's shape.
+        {unit === "mm" && widthMm > 600 && (
+          <span className="text-amber-500 ml-1">
+            Check your laser bed fits {widthMm} mm.
+          </span>
+        )}
       </p>
     </div>
   );

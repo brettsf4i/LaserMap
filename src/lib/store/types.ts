@@ -37,14 +37,12 @@ export interface AppStore {
 
   // Export config
   widthMm: number;
-  simplificationTolerance: number;
   roadBufferMeters: number;
   isExporting: boolean;
   unit: Unit;
   /** Keys from ROAD_CLASS_DEFS that are currently enabled for the cut layer */
   majorRoadClasses: string[];
   setWidthMm: (mm: number) => void;
-  setSimplification: (tolerance: number) => void;
   setRoadBuffer: (meters: number) => void;
   setIsExporting: (v: boolean) => void;
   setUnit: (unit: Unit) => void;

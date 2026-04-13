@@ -1,5 +1,6 @@
 import type { Feature, Polygon, LineString, MultiPolygon, Position } from "geojson";
-import { MINOR_ROAD_TYPES, MAJOR_ROAD_TYPES } from "./queries";
+// Road classification now happens in the pipeline (area-adaptive).
+// The parser simply collects all highway-tagged ways.
 
 // ---------------------------------------------------------------------------
 // OSM element types
@@ -65,51 +66,94 @@ function posEq(a: Position, b: Position): boolean {
 /**
  * Stitch an unordered set of OSM way segments into one or more closed rings.
  * Each ring is returned as a closed Position[] (first === last).
+ *
+ * Uses an endpoint lookup Map for O(1) neighbour search instead of the
+ * previous O(m) linear scan, reducing overall complexity from O(m²) to O(m).
+ * This matters for complex water relations with 100+ member ways.
  */
 function stitchWaysIntoRings(
   wayIds: number[],
   wayMap: Map<number, Position[]>
 ): Position[][] {
-  // Collect raw segments, try both orientations
   const segments: Position[][] = [];
   for (const id of wayIds) {
     const way = wayMap.get(id);
     if (way && way.length >= 2) segments.push(way);
   }
+  if (segments.length === 0) return [];
+
+  // Build endpoint → [segment indices] map so we can find connecting segments
+  // in O(1) rather than scanning all segments on every step.
+  function epKey(p: Position): string {
+    // Round to 7 decimal places (~1 cm) to handle floating-point fuzz
+    return `${p[0].toFixed(7)},${p[1].toFixed(7)}`;
+  }
+
+  const endpointMap = new Map<string, number[]>();
+  function addToMap(key: string, idx: number) {
+    const list = endpointMap.get(key);
+    if (list) list.push(idx);
+    else endpointMap.set(key, [idx]);
+  }
+  function removeFromMap(key: string, idx: number) {
+    const list = endpointMap.get(key);
+    if (!list) return;
+    const pos = list.indexOf(idx);
+    if (pos !== -1) list.splice(pos, 1);
+  }
+
+  for (let i = 0; i < segments.length; i++) {
+    const seg = segments[i];
+    addToMap(epKey(seg[0]), i);
+    addToMap(epKey(seg[seg.length - 1]), i);
+  }
 
   const used = new Array(segments.length).fill(false);
   const rings: Position[][] = [];
 
+  function markUsed(idx: number) {
+    used[idx] = true;
+    const seg = segments[idx];
+    removeFromMap(epKey(seg[0]), idx);
+    removeFromMap(epKey(seg[seg.length - 1]), idx);
+  }
+
+  /** Find an unused segment whose start or end matches `pt`. Returns index and
+   *  whether the segment needs to be reversed to connect forward. */
+  function findNext(pt: Position): { idx: number; reverse: boolean } | null {
+    const key = epKey(pt);
+    const candidates = endpointMap.get(key) ?? [];
+    for (const idx of candidates) {
+      if (used[idx]) continue;
+      const seg = segments[idx];
+      if (posEq(pt, seg[0])) return { idx, reverse: false };
+      if (posEq(pt, seg[seg.length - 1])) return { idx, reverse: true };
+    }
+    return null;
+  }
+
   for (let s = 0; s < segments.length; s++) {
     if (used[s]) continue;
-    used[s] = true;
+    markUsed(s);
 
     let ring = [...segments[s]];
 
-    // Extend ring until we can't connect any more unused segment
-    let extended = true;
-    while (extended) {
-      extended = false;
-      for (let i = 0; i < segments.length; i++) {
-        if (used[i]) continue;
-        const seg = segments[i];
-        const rEnd = ring[ring.length - 1];
-        const rStart = ring[0];
+    // Extend from the tail of the ring
+    for (;;) {
+      const match = findNext(ring[ring.length - 1]);
+      if (!match) break;
+      markUsed(match.idx);
+      const seg = segments[match.idx];
+      ring = ring.concat(match.reverse ? [...seg].reverse().slice(1) : seg.slice(1));
+    }
 
-        if (posEq(rEnd, seg[0])) {
-          ring = ring.concat(seg.slice(1));
-          used[i] = true; extended = true; break;
-        } else if (posEq(rEnd, seg[seg.length - 1])) {
-          ring = ring.concat([...seg].reverse().slice(1));
-          used[i] = true; extended = true; break;
-        } else if (posEq(rStart, seg[seg.length - 1])) {
-          ring = seg.concat(ring.slice(1));
-          used[i] = true; extended = true; break;
-        } else if (posEq(rStart, seg[0])) {
-          ring = [...seg].reverse().concat(ring.slice(1));
-          used[i] = true; extended = true; break;
-        }
-      }
+    // Extend from the head of the ring (handles reversed starts)
+    for (;;) {
+      const match = findNext(ring[0]);
+      if (!match) break;
+      markUsed(match.idx);
+      const seg = segments[match.idx];
+      ring = (match.reverse ? seg : [...seg].reverse()).concat(ring.slice(1));
     }
 
     if (ring.length < 3) continue;
@@ -195,8 +239,8 @@ function isWaterRelation(tags: Record<string, string>): boolean {
 
 export interface CombinedLayers {
   waterFeatures: Feature<Polygon | MultiPolygon | LineString>[];
-  minorRoadFeatures: Feature<LineString>[];
-  majorRoadFeatures: Feature<LineString>[];
+  /** All road features returned by the query — pipeline classifies into cut/engrave */
+  allRoadFeatures: Feature<LineString>[];
 }
 
 export function parseCombinedResponse(data: OverpassResponse): CombinedLayers {
@@ -204,8 +248,7 @@ export function parseCombinedResponse(data: OverpassResponse): CombinedLayers {
   const wayMap = buildWayMap(data, nodeMap);
 
   const waterFeatures: Feature<Polygon | MultiPolygon | LineString>[] = [];
-  const minorRoadFeatures: Feature<LineString>[] = [];
-  const majorRoadFeatures: Feature<LineString>[] = [];
+  const allRoadFeatures: Feature<LineString>[] = [];
 
   // Track way IDs that are members of water relations — don't double-count
   const wayIdsInWaterRelations = new Set<number>();
@@ -259,17 +302,9 @@ export function parseCombinedResponse(data: OverpassResponse): CombinedLayers {
           geometry: { type: "LineString", coordinates: coords },
         });
       }
-    } else if (tags["highway"] && MINOR_ROAD_TYPES.has(tags["highway"])) {
+    } else if (tags["highway"]) {
       if (coords.length >= 2) {
-        minorRoadFeatures.push({
-          type: "Feature",
-          properties: tags,
-          geometry: { type: "LineString", coordinates: coords },
-        });
-      }
-    } else if (tags["highway"] && MAJOR_ROAD_TYPES.has(tags["highway"])) {
-      if (coords.length >= 2) {
-        majorRoadFeatures.push({
+        allRoadFeatures.push({
           type: "Feature",
           properties: tags,
           geometry: { type: "LineString", coordinates: coords },
@@ -278,7 +313,7 @@ export function parseCombinedResponse(data: OverpassResponse): CombinedLayers {
     }
   }
 
-  return { waterFeatures, minorRoadFeatures, majorRoadFeatures };
+  return { waterFeatures, allRoadFeatures };
 }
 
 // ---------------------------------------------------------------------------

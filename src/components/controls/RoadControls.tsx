@@ -4,23 +4,20 @@ import { useAppStore } from "@/lib/store";
 import { metersToDisplay } from "@/lib/units";
 import { ROAD_CLASS_DEFS } from "@/lib/overpass/queries";
 
-const LOG_MIN = Math.log10(0.000005);
-const LOG_MAX = Math.log10(0.001);
-
-function toleranceToSlider(t: number): number {
-  return Math.round(((Math.log10(t) - LOG_MIN) / (LOG_MAX - LOG_MIN)) * 100);
-}
-function sliderToTolerance(v: number): number {
-  return Math.pow(10, LOG_MIN + (v / 100) * (LOG_MAX - LOG_MIN));
+/** Human-readable road width hint at a given metre value */
+function widthHint(meters: number): string {
+  if (meters <= 5)  return "narrow lane";
+  if (meters <= 10) return "one lane";
+  if (meters <= 16) return "two lanes";
+  if (meters <= 25) return "wide road";
+  return "motorway width";
 }
 
 export default function RoadControls() {
   const {
     roadBufferMeters,
-    simplificationTolerance,
     majorRoadClasses,
     setRoadBuffer,
-    setSimplification,
     setMajorRoadClasses,
     unit,
   } = useAppStore();
@@ -42,10 +39,10 @@ export default function RoadControls() {
       {/* ── Major road class selection ── */}
       <div className="flex flex-col gap-1.5">
         <p className="text-xs font-medium text-gray-600">
-          Major Roads cut layer
+          Major Roads — choose which types to cut
         </p>
         <p className="text-xs text-gray-400 -mt-0.5 mb-1">
-          Only named roads are fetched. Toggle classes to tune the cut layer.
+          Only named roads are fetched. Toggle to tune the cut layer.
         </p>
 
         {ROAD_CLASS_DEFS.map(({ key, label, osmColor }) => {
@@ -81,7 +78,6 @@ export default function RoadControls() {
                 )}
               </span>
 
-              {/* Label */}
               <span className="text-sm text-gray-700 flex-1">{label}</span>
 
               {/* OSM colour swatch */}
@@ -98,7 +94,7 @@ export default function RoadControls() {
       <div>
         <div className="flex justify-between mb-1">
           <label className="text-sm font-medium text-gray-700">Road Width</label>
-          <span className="text-sm text-gray-500">
+          <span className="text-sm text-gray-500 tabular-nums">
             {metersToDisplay(roadBufferMeters, unit)}
           </span>
         </div>
@@ -113,40 +109,11 @@ export default function RoadControls() {
         />
         <div className="flex justify-between text-xs text-gray-400 mt-0.5">
           <span>{metersToDisplay(3, unit)}</span>
+          <span className="text-gray-500 italic">{widthHint(roadBufferMeters)}</span>
           <span>{metersToDisplay(50, unit)}</span>
         </div>
       </div>
 
-      {/* ── Simplification ── */}
-      <div>
-        <div className="flex justify-between mb-1">
-          <label className="text-sm font-medium text-gray-700">
-            Simplification
-          </label>
-          <span className="text-sm text-gray-500">
-            {simplificationTolerance < 0.0001
-              ? "Fine"
-              : simplificationTolerance < 0.0005
-              ? "Medium"
-              : "Coarse"}
-          </span>
-        </div>
-        <input
-          type="range"
-          min={0}
-          max={100}
-          step={1}
-          value={toleranceToSlider(simplificationTolerance)}
-          onChange={(e) =>
-            setSimplification(sliderToTolerance(Number(e.target.value)))
-          }
-          className="w-full accent-gray-600"
-        />
-        <div className="flex justify-between text-xs text-gray-400 mt-0.5">
-          <span>Fine</span>
-          <span>Coarse</span>
-        </div>
-      </div>
     </div>
   );
 }

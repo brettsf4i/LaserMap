@@ -35,7 +35,7 @@ export default function LayerPreview({ mapCanvasRef }: Props) {
     }).addTo(map);
 
     engraveLayerRef.current = L.geoJSON(EMPTY_FC, {
-      style: { color: "#6b7280", weight: 1.5, fillOpacity: 0 },
+      style: { color: "#000000", weight: 1, fillOpacity: 0 },
     }).addTo(map);
 
     topCutLayerRef.current = L.geoJSON(EMPTY_FC, {

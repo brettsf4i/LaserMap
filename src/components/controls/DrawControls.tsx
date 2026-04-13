@@ -9,12 +9,11 @@ interface Props {
 }
 
 const PRESETS = [
-  { label: "1∶1",  w: 1,   h: 1   },
-  { label: "4∶3",  w: 4,   h: 3   },
-  { label: "3∶2",  w: 3,   h: 2   },
-  { label: "16∶9", w: 16,  h: 9   },
-  { label: "A4",   w: 210, h: 297 },
-  { label: "Letter", w: 17, h: 22 },
+  { label: "1∶1",  w: 1,  h: 1,  tip: "Square"          },
+  { label: "4∶3",  w: 4,  h: 3,  tip: "Landscape 4:3"   },
+  { label: "3∶2",  w: 3,  h: 2,  tip: "Landscape 3:2"   },
+  { label: "5∶7",  w: 5,  h: 7,  tip: "Portrait 5:7"    },
+  { label: "16∶9", w: 16, h: 9,  tip: "Widescreen 16:9" },
 ];
 
 export default function DrawControls({ mapRef }: Props) {
@@ -39,6 +38,7 @@ export default function DrawControls({ mapRef }: Props) {
 
   const activePreset = PRESETS.find((p) => p.w === ratioW && p.h === ratioH) ?? null;
 
+
   const handleDraw = () => {
     const ratio = ratioW / ratioH;
     if (!isFinite(ratio) || ratio <= 0) return;
@@ -54,7 +54,7 @@ export default function DrawControls({ mapRef }: Props) {
   return (
     <div className="flex flex-col gap-3">
       <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide">
-        Draw Selection
+        Step 2 — Draw Your Area
       </h3>
 
       {/* ── Aspect ratio heading ── */}
@@ -110,10 +110,11 @@ export default function DrawControls({ mapRef }: Props) {
 
       {/* ── Preset chips ── */}
       <div className="flex flex-wrap gap-1.5">
-        {PRESETS.map(({ label, w, h }) => (
+        {PRESETS.map(({ label, w, h, tip }) => (
           <button
             key={label}
             onClick={() => applyPreset(w, h)}
+            title={tip}
             className={`px-2.5 py-0.5 rounded-full text-xs font-medium border transition-colors ${
               activePreset?.label === label
                 ? "border-blue-400 bg-blue-50 text-blue-600"
@@ -141,7 +142,7 @@ export default function DrawControls({ mapRef }: Props) {
       <p className="text-xs text-gray-400 -mt-1">
         {isDrawing
           ? "Release the mouse to confirm your selection."
-          : "Use the polygon tool on the map for freeform areas."}
+          : "Set your aspect ratio above, then click Draw on Map and drag a rectangle."}
       </p>
     </div>
   );

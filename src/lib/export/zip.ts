@@ -12,6 +12,8 @@ import {
 export interface ExportOptions {
   widthMm: number;
   border: BorderOptions;
+  /** Which layers to include in the export — mirrors the store's visible state */
+  visible: { cut: boolean; engrave: boolean; topCut: boolean };
 }
 
 export async function exportLayersAsZip(
@@ -20,36 +22,47 @@ export async function exportLayersAsZip(
   opts: ExportOptions,
   filename = "laser-map"
 ): Promise<void> {
-  const { widthMm, border } = opts;
+  const { widthMm, border, visible } = opts;
   const proj = createProjection({ bbox, widthMm });
+
+  // Auto-size border to 5 % of map width so it scales proportionally
+  // regardless of the project dimensions.  The stored thicknessMm is ignored.
+  const effectiveBorder: typeof border = border.enabled
+    ? { ...border, thicknessMm: widthMm * 0.05 }
+    : border;
   const zip = new JSZip();
   const folder = zip.folder("layers")!;
 
-  if (layers.cutLayer) {
+  const layerReadmeLines: string[] = ["Layers included in this export:"];
+
+  if (visible.cut && layers.cutLayer) {
     folder.file(
       "01_cut_layer.svg",
-      generateCutLayerSVG(layers.cutLayer, proj, border)
+      generateCutLayerSVG(layers.cutLayer, proj, effectiveBorder)
     );
+    layerReadmeLines.push("  01_cut_layer.svg      - Land/water boundary. CUT with full power (red, filled).");
   }
-  if (layers.engraveLayer) {
+  if (visible.engrave && layers.engraveLayer) {
     folder.file(
       "02_engrave_layer.svg",
-      generateEngraveLayerSVG(layers.engraveLayer, proj, border)
+      generateEngraveLayerSVG(layers.engraveLayer, proj, effectiveBorder)
     );
+    layerReadmeLines.push("  02_engrave_layer.svg  - Local roads hairline etch. ENGRAVE (black, stroke only). Road classes adapt to map scale.");
   }
-  if (layers.topCutLayer) {
+  if (visible.topCut && layers.topCutLayer) {
     folder.file(
       "03_top_cut_layer.svg",
-      generateTopCutLayerSVG(layers.topCutLayer, proj, border)
+      generateTopCutLayerSVG(layers.topCutLayer, proj, effectiveBorder)
     );
+    layerReadmeLines.push("  03_top_cut_layer.svg  - Major Roads buffered to uniform width. CUT (red, filled). Road classes adapt to map scale.");
   }
 
-  const borderNote = border.enabled
+  const borderNote = effectiveBorder.enabled
     ? [
         "",
         "Border / Registration:",
-        `  Frame thickness: ${border.thicknessMm.toFixed(2)} mm (${(border.thicknessMm / 25.4).toFixed(3)} in)`,
-        `  Corner marks: ${border.cornerMarks ? "yes (3 mm dowel-pin holes in frame)" : "no"}`,
+        `  Frame thickness: ${effectiveBorder.thicknessMm.toFixed(2)} mm (${(effectiveBorder.thicknessMm / 25.4).toFixed(3)} in) — auto-sized to 5% of map width`,
+        `  Corner marks: ${effectiveBorder.cornerMarks ? "yes (3 mm dowel-pin holes in frame)" : "no"}`,
         "  The solid frame is identical on all layers — stack and align edges for registration.",
       ].join("\n")
     : "";
@@ -61,10 +74,7 @@ export async function exportLayersAsZip(
     `Physical dimensions: ${widthMm}mm wide x ${proj.height.toFixed(1)}mm tall`,
     `Bounding box: W=${bbox[0].toFixed(5)} S=${bbox[1].toFixed(5)} E=${bbox[2].toFixed(5)} N=${bbox[3].toFixed(5)}`,
     "",
-    "Layers:",
-    "  01_cut_layer.svg      - Land/water boundary. CUT with full power (red, filled).",
-    "  02_engrave_layer.svg  - Minor roads (all except primary/secondary). ENGRAVE as hairline (black, stroke only).",
-    "  03_top_cut_layer.svg  - Major Roads: primary & secondary roads buffered to uniform width. CUT (red, filled).",
+    ...layerReadmeLines,
     borderNote,
     "",
     "Import each SVG separately into your laser software (LightBurn, RDWorks, etc.).",

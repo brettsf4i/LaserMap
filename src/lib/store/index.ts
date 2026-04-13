@@ -27,7 +27,6 @@ export const useAppStore = create<AppStore>()(
 
       // Export config
       widthMm: 200,
-      simplificationTolerance: 0.0001,
       roadBufferMeters: 12,
       isExporting: false,
       unit: "mm",
@@ -35,15 +34,13 @@ export const useAppStore = create<AppStore>()(
       // Tertiary is available but off by default — user can enable per project.
       majorRoadClasses: ["motorway", "trunk", "primary", "secondary"],
       setWidthMm: (widthMm) => set({ widthMm }),
-      setSimplification: (simplificationTolerance) =>
-        set({ simplificationTolerance }),
       setRoadBuffer: (roadBufferMeters) => set({ roadBufferMeters }),
       setIsExporting: (isExporting) => set({ isExporting }),
       setUnit: (unit) => set({ unit }),
       setMajorRoadClasses: (majorRoadClasses) => set({ majorRoadClasses }),
 
       // Border / registration
-      borderEnabled: false,
+      borderEnabled: true,
       borderThicknessMm: 12.7, // 0.5 inches default
       cornerMarksEnabled: false,
       setBorderEnabled: (borderEnabled) => set({ borderEnabled }),
