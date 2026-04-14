@@ -5,65 +5,6 @@ import type { Projection } from "./projection";
 import type { BorderOptions } from "./border";
 import { buildSVGDocument } from "./builder";
 
-// ─────────────────────────────────────────────────────────────────────────────
-// SVG-space circle helpers
-//
-// Geographic → SVG projection flips the Y-axis, which reverses polygon ring
-// winding. polygon-clipping uses the mathematical CCW = exterior convention.
-// To keep correct topology we:
-//   1. Project all geographic rings to SVG mm space.
-//   2. REVERSE each ring (restores CCW = exterior in standard-math sense).
-//   3. Build circle rings directly in SVG mm space.
-//
-// Proof that angle 0→2π in SVG space is CCW (positive area) in standard math:
-//   ½ ∮ (x dy − y dx) = ½ ∫₀²π [(cx+r·cosθ)(r·cosθ) + (cy+r·sinθ)(r·sinθ)] dθ
-//                      = ½ · 2π·r²  =  π·r²  > 0  ✓
-// ─────────────────────────────────────────────────────────────────────────────
-
-type SVGRing = [number, number][];
-type SVGPolygon = SVGRing[];
-type SVGMultiPolygon = SVGPolygon[];
-
-/** Project all rings to SVG mm coords and reverse their winding. */
-function projectAndReverseRings(geom: MultiPolygon, proj: Projection): SVGMultiPolygon {
-  return geom.coordinates.map((polygon) =>
-    polygon.map((ring) =>
-      ring.map((pt) => proj.project(pt[0], pt[1]) as [number, number]).reverse()
-    )
-  );
-}
-
-/** CCW circle (exterior ring) in SVG mm space — angle increases 0 → 2π. */
-function svgCircleCCW(cx: number, cy: number, r: number, segments = 128): SVGRing {
-  const ring: SVGRing = [];
-  for (let i = 0; i <= segments; i++) {
-    const a = (2 * Math.PI * i) / segments;
-    ring.push([cx + r * Math.cos(a), cy + r * Math.sin(a)]);
-  }
-  return ring;
-}
-
-/** CW circle (hole ring) in SVG mm space — angle decreases 2π → 0. */
-function svgCircleCW(cx: number, cy: number, r: number, segments = 128): SVGRing {
-  const ring: SVGRing = [];
-  for (let i = 0; i <= segments; i++) {
-    const a = (2 * Math.PI * (segments - i)) / segments;
-    ring.push([cx + r * Math.cos(a), cy + r * Math.sin(a)]);
-  }
-  return ring;
-}
-
-/** Convert polygon-clipping output (in SVG mm coords) to an SVG path string. */
-function svgCoordsToPath(coords: SVGMultiPolygon): string {
-  const fp = (n: number) => parseFloat(n.toFixed(4)).toString();
-  return coords
-    .flatMap((polygon) =>
-      polygon.map((ring) =>
-        ring.map((pt, i) => `${i === 0 ? "M" : "L"}${fp(pt[0])},${fp(pt[1])}`).join(" ") + " Z"
-      )
-    )
-    .join(" ");
-}
 
 // ── Rectangle clipping (geographic space — no Y-flip issue) ──────────────────
 
@@ -109,70 +50,119 @@ function clipToInnerBbox(
   }
 }
 
-// ── Circle clip + weld (SVG mm space) ────────────────────────────────────────
+// ── Geographic-space circle helpers ──────────────────────────────────────────
 
 /**
- * Clip a MultiPolygon to the inner circle, operating entirely in SVG mm space.
- * Returns the SVG path string directly (no round-trip to geographic coords).
+ * Build a CCW geographic ring (ellipse) that maps exactly to the SVG inner
+ * circle when projected.  Works entirely in geo space — same pipeline that
+ * already works correctly for the rectangle border.
  *
- * Why SVG space: projecting geo→SVG flips Y, which reverses ring winding and
- * breaks polygon-clipping (CCW=exterior convention). Working in SVG space
- * with explicit winding control gives correct results.
+ * Derivation: proj maps (lon, lat) → (x, y) as
+ *   x = (lon − west) * scaleX,   y = (north − lat) * scaleY
+ * Inverting: lon = west + x/scaleX, lat = north − y/scaleY.
+ * The SVG circle x=cx+r·cos a, y=cy+r·sin a inverts to
+ *   lon = lonCen + lonR·cos(a)
+ *   lat = latCen − latR·sin(a)       ← minus because y flip
+ * Going a from 2π→0 makes lat trace north→south→north = CCW in geo (Y-up). ✓
  */
-function clipMultiPolygonToCircleSVG(
+function geoEllipseForSVGCircle(
+  proj: Projection,
+  svgRadiusMm: number,
+  segments = 128
+): Position[] {
+  const [west, south, east, north] = proj.bbox;
+  const scaleX = proj.width  / (east - west);
+  const scaleY = proj.height / (north - south);
+
+  const cx = proj.width  / 2;
+  const cy = proj.height / 2;
+  const lonCen = west  + cx / scaleX;
+  const latCen = north - cy / scaleY;
+  const lonR   = svgRadiusMm / scaleX;
+  const latR   = svgRadiusMm / scaleY;
+
+  const ring: Position[] = [];
+  // Decreasing angle → CCW in geographic space (Y-up)
+  for (let i = 0; i <= segments; i++) {
+    const a = (2 * Math.PI * (segments - i)) / segments;
+    ring.push([lonCen + lonR * Math.cos(a), latCen - latR * Math.sin(a)]);
+  }
+  return ring;
+}
+
+/**
+ * Clip a MultiPolygon to the inner SVG circle — entirely in geographic space.
+ * Creates a geographic ellipse matching the SVG circle, clips with it, then
+ * projects the result to SVG using the standard multiPolygonToPath pipeline.
+ * Falls back to the full projected polygon if clipping fails.
+ */
+function clipMultiPolygonToCircle(
   geom: MultiPolygon,
   proj: Projection,
   innerRadiusMm: number
 ): string {
-  const cx = proj.width / 2;
-  const cy = proj.height / 2;
-
-  const svgRings = projectAndReverseRings(geom, proj);
-  const clipCircle = svgCircleCCW(cx, cy, innerRadiusMm); // exterior = clip mask
+  const geoRing = geoEllipseForSVGCircle(proj, innerRadiusMm);
 
   try {
     const clipped = polygonClipping.intersection(
-      svgRings as unknown as Parameters<typeof polygonClipping.intersection>[0],
-      [[clipCircle]] as unknown as Parameters<typeof polygonClipping.intersection>[1]
+      geom.coordinates as unknown as Parameters<typeof polygonClipping.intersection>[0],
+      [[geoRing]] as unknown as Parameters<typeof polygonClipping.intersection>[1]
     );
-    if (!clipped?.length) return "";
-    return svgCoordsToPath(clipped as unknown as SVGMultiPolygon);
+    if (!clipped?.length) return multiPolygonToPath(geom, proj);
+    return multiPolygonToPath(
+      { type: "MultiPolygon", coordinates: clipped as Position[][][] },
+      proj
+    );
   } catch {
-    return "";
+    return multiPolygonToPath(geom, proj);
   }
 }
 
 /**
- * Weld a MultiPolygon (roads clipped to inner circle) with the circular border
- * frame in SVG mm space. The frame is an annulus: outer circle − inner circle.
- * Unioning roads + frame cancels the shared inner-circle edges so there is no
- * laser-cut line where a road meets the frame.
- *
- * Returns SVG path string directly.
+ * Weld a MultiPolygon (major roads) with the circular border frame — entirely
+ * in geographic space.  Clips roads to the inner geo ellipse, builds the
+ * annular frame polygon, unions them, and projects to SVG.
  */
-function weldWithCircleFrameSVG(
+function weldWithCircleFrameGeo(
   geom: MultiPolygon,
   proj: Projection,
   thicknessMm: number
 ): string {
-  const cx = proj.width / 2;
-  const cy = proj.height / 2;
   const outerR = Math.min(proj.width, proj.height) / 2;
   const innerR = outerR - thicknessMm;
   if (innerR <= 0) return "";
 
-  const svgRings = projectAndReverseRings(geom, proj);
+  const outerRing = geoEllipseForSVGCircle(proj, outerR);
+  const innerRing = geoEllipseForSVGCircle(proj, innerR);
+  // Inner ring must be a hole (CW in geo) — reverse the CCW ring
+  const innerHole = [...innerRing].reverse();
 
-  // Frame polygon: outer circle (CCW = exterior) + inner circle (CW = hole)
-  const frame: SVGPolygon = [svgCircleCCW(cx, cy, outerR), svgCircleCW(cx, cy, innerR)];
+  // Frame = outer geo ellipse with inner as hole
+  const frame = [[outerRing, innerHole]];
 
   try {
-    const welded = polygonClipping.union(
-      svgRings as unknown as Parameters<typeof polygonClipping.union>[0],
-      [frame] as unknown as Parameters<typeof polygonClipping.union>[1]
+    // Clip roads to inner ellipse first
+    const roadsClipped = polygonClipping.intersection(
+      geom.coordinates as unknown as Parameters<typeof polygonClipping.intersection>[0],
+      [[innerRing]] as unknown as Parameters<typeof polygonClipping.intersection>[1]
     );
+
+    const roadsInput = roadsClipped?.length
+      ? roadsClipped
+      : ([] as typeof roadsClipped);
+
+    const welded = polygonClipping.union(
+      frame as unknown as Parameters<typeof polygonClipping.union>[0],
+      ...(roadsInput.length
+        ? [roadsInput as unknown as Parameters<typeof polygonClipping.union>[1]]
+        : [])
+    );
+
     if (!welded?.length) return "";
-    return svgCoordsToPath(welded as unknown as SVGMultiPolygon);
+    return multiPolygonToPath(
+      { type: "MultiPolygon", coordinates: welded as Position[][][] },
+      proj
+    );
   } catch {
     return "";
   }
@@ -402,7 +392,7 @@ export function generateCutLayerSVG(
   if (border?.enabled && border.thicknessMm > 0 && border.shape === "circle") {
     const outerR = Math.min(proj.width, proj.height) / 2;
     const innerR = outerR - border.thicknessMm;
-    d = innerR > 0 ? clipMultiPolygonToCircleSVG(feature.geometry, proj, innerR) : "";
+    d = innerR > 0 ? clipMultiPolygonToCircle(feature.geometry, proj, innerR) : "";
   } else {
     const clipped =
       border?.enabled && border.thicknessMm > 0
@@ -463,7 +453,7 @@ export function generateTopCutLayerSVG(
       if (innerR > 0) {
         // First clip to inner circle (returns path string), but we need the geometry
         // for welding — so clip in SVG space and get a welded path directly
-        d = weldWithCircleFrameSVG(feature.geometry, proj, border.thicknessMm);
+        d = weldWithCircleFrameGeo(feature.geometry, proj, border.thicknessMm);
       } else {
         d = "";
       }
