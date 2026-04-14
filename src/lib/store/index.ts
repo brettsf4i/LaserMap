@@ -42,9 +42,11 @@ export const useAppStore = create<AppStore>()(
       // Border / registration
       borderEnabled: true,
       borderThicknessMm: 12.7, // 0.5 inches default
+      borderShape: "rectangle" as const,
       cornerMarksEnabled: false,
       setBorderEnabled: (borderEnabled) => set({ borderEnabled }),
       setBorderThicknessMm: (borderThicknessMm) => set({ borderThicknessMm }),
+      setBorderShape: (borderShape) => set({ borderShape }),
       setCornerMarksEnabled: (cornerMarksEnabled) => set({ cornerMarksEnabled }),
     }),
     { name: "LaserMapStore" }

@@ -70,7 +70,7 @@ export function buildSVGDocument(
 
   if (border?.enabled) {
     // Clip map content to the inner (non-frame) area
-    defs = buildClipPathDefs(width, height, border.thicknessMm);
+    defs = buildClipPathDefs(width, height, border.thicknessMm, border.shape);
     mapContent = `  <g clip-path="url(#map-clip)">\n${paths}\n  </g>`;
 
     // Solid frame — cut layers only; engrave layer skips this

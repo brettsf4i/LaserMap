@@ -51,8 +51,10 @@ export interface AppStore {
   // Border / registration
   borderEnabled: boolean;
   borderThicknessMm: number;
+  borderShape: "rectangle" | "circle";
   cornerMarksEnabled: boolean;
   setBorderEnabled: (v: boolean) => void;
   setBorderThicknessMm: (mm: number) => void;
+  setBorderShape: (shape: "rectangle" | "circle") => void;
   setCornerMarksEnabled: (v: boolean) => void;
 }

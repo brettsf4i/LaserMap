@@ -1,13 +1,15 @@
 /**
  * Border & registration-mark helpers.
  *
- * The border is a solid filled frame — an outer rectangle with a rectangular
- * hole cut out of the centre (fill-rule="evenodd"). It is identical on the
- * cut and top-cut layers. The engrave layer clips its content to the inner
- * area but does not render the frame (it is covered by the top-layer border).
+ * Supports two border shapes:
+ *  - "rectangle": solid filled frame with outer rect + inner rect hole (evenodd)
+ *  - "circle":    solid filled ring — outer circle + inner circle hole (evenodd)
+ *                 The circle is inscribed in the map dimensions (radius = min(w,h)/2)
+ *                 and the inner circle is inset by thicknessMm.
  *
- * A <clipPath> is injected into every SVG that has an active border so that
- * map content (roads, water) never renders inside the frame band.
+ * The clipPath is used in the SVG to prevent map content from rendering inside
+ * the frame band. Laser software reads raw coordinates, so geometric clipping
+ * is also applied separately in layers.ts.
  */
 
 export interface BorderOptions {
@@ -15,26 +17,64 @@ export interface BorderOptions {
   enabled: boolean;
   /** Solid band width in mm */
   thicknessMm: number;
-  /** Whether to punch registration circles at the four inner corners */
+  /** Shape of the border frame */
+  shape: "rectangle" | "circle";
+  /** Whether to punch registration circles at the four inner corners (rectangle only) */
   cornerMarks: boolean;
+}
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+/** Fixed-decimal formatter — strips trailing zeros for compact output */
+export function f(n: number): string {
+  return parseFloat(n.toFixed(4)).toString();
+}
+
+/**
+ * SVG arc path for a full circle using two half-arcs (SVG can't draw a full
+ * circle with a single arc command).
+ */
+function circlePath(cx: number, cy: number, r: number): string {
+  return (
+    `M ${f(cx + r)},${f(cy)} ` +
+    `A ${f(r)},${f(r)} 0 1 0 ${f(cx - r)},${f(cy)} ` +
+    `A ${f(r)},${f(r)} 0 1 0 ${f(cx + r)},${f(cy)} Z`
+  );
 }
 
 // ── Clip path ─────────────────────────────────────────────────────────────────
 
 /**
- * Returns a <defs> block containing a <clipPath id="map-clip"> that restricts
- * map content to the inner rectangle (outside the frame band).
+ * Returns a <defs> block with a <clipPath id="map-clip"> that restricts map
+ * content to the inner area (inside the frame band).
  */
 export function buildClipPathDefs(
   width: number,
   height: number,
-  thicknessMm: number
+  thicknessMm: number,
+  shape: "rectangle" | "circle" = "rectangle"
 ): string {
   const T = thicknessMm;
+
+  if (shape === "circle") {
+    const cx = width / 2;
+    const cy = height / 2;
+    const outerR = Math.min(width, height) / 2;
+    const innerR = outerR - T;
+    if (innerR <= 0) return "";
+    return [
+      `  <defs>`,
+      `    <clipPath id="map-clip">`,
+      `      <circle cx="${f(cx)}" cy="${f(cy)}" r="${f(innerR)}" />`,
+      `    </clipPath>`,
+      `  </defs>`,
+    ].join("\n");
+  }
+
+  // rectangle
   const innerW = width - 2 * T;
   const innerH = height - 2 * T;
   if (innerW <= 0 || innerH <= 0) return "";
-
   return [
     `  <defs>`,
     `    <clipPath id="map-clip">`,
@@ -47,22 +87,46 @@ export function buildClipPathDefs(
 // ── Frame path ────────────────────────────────────────────────────────────────
 
 /**
- * Returns a single red filled <path> (fill-rule evenodd) that forms the solid
- * frame:  outer ring = full canvas, inner ring = hole, corner arcs = pin holes.
+ * Returns a single red filled <path> that forms the solid frame.
+ * Uses fill-rule="evenodd" so the inner shape becomes a hole.
  */
 export function buildBorderFrameElement(
   width: number,
   height: number,
   opts: BorderOptions
 ): string {
-  const { thicknessMm, cornerMarks } = opts;
+  const { thicknessMm, cornerMarks, shape } = opts;
   const T = thicknessMm;
 
+  if (shape === "circle") {
+    const cx = width / 2;
+    const cy = height / 2;
+    const outerR = Math.min(width, height) / 2;
+    const innerR = outerR - T;
+    if (innerR <= 0) return "";
+
+    // Outer circle (CW) + inner circle (CCW via second arc direction) → evenodd hole
+    const outer = circlePath(cx, cy, outerR);
+    const inner = circlePath(cx, cy, innerR);
+    const d = `${outer} ${inner}`.trim();
+
+    return [
+      `  <!-- Circular border frame — fill-rule evenodd creates ring -->`,
+      `  <path`,
+      `    id="border-frame"`,
+      `    d="${d}"`,
+      `    fill="#FF0000"`,
+      `    stroke="none"`,
+      `    fill-rule="evenodd"`,
+      `  />`,
+    ].join("\n");
+  }
+
+  // ── Rectangle ──────────────────────────────────────────────────────────────
   const innerX = T;
   const innerY = T;
   const innerW = width - 2 * T;
   const innerH = height - 2 * T;
-
   if (innerW <= 0 || innerH <= 0) return "";
 
   // Outer rectangle (clockwise)
@@ -106,9 +170,4 @@ export function buildBorderFrameElement(
     `    fill-rule="evenodd"`,
     `  />`,
   ].join("\n");
-}
-
-/** Fixed-decimal formatter — strips trailing zeros for compact output */
-function f(n: number): string {
-  return parseFloat(n.toFixed(4)).toString();
 }

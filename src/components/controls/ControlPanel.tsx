@@ -182,6 +182,7 @@ export default function ControlPanel({ mapRef }: Props) {
         border: {
           enabled: store.borderEnabled,
           thicknessMm: store.borderThicknessMm,
+          shape: store.borderShape,
           cornerMarks: store.cornerMarksEnabled,
         },
         visible: store.visible,
