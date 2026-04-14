@@ -241,6 +241,8 @@ export interface CombinedLayers {
   waterFeatures: Feature<Polygon | MultiPolygon | LineString>[];
   /** All road features returned by the query — pipeline classifies into cut/engrave */
   allRoadFeatures: Feature<LineString>[];
+  /** OSM coastline ways as open LineStrings — used to synthesize ocean polygons */
+  coastlineFeatures: Feature<LineString>[];
 }
 
 export function parseCombinedResponse(data: OverpassResponse): CombinedLayers {
@@ -249,6 +251,7 @@ export function parseCombinedResponse(data: OverpassResponse): CombinedLayers {
 
   const waterFeatures: Feature<Polygon | MultiPolygon | LineString>[] = [];
   const allRoadFeatures: Feature<LineString>[] = [];
+  const coastlineFeatures: Feature<LineString>[] = [];
 
   // Track way IDs that are members of water relations — don't double-count
   const wayIdsInWaterRelations = new Set<number>();
@@ -302,6 +305,15 @@ export function parseCombinedResponse(data: OverpassResponse): CombinedLayers {
           geometry: { type: "LineString", coordinates: coords },
         });
       }
+    } else if (tags["natural"] === "coastline") {
+      // Coastline ways — open line segments used to build ocean polygons
+      if (coords.length >= 2) {
+        coastlineFeatures.push({
+          type: "Feature",
+          properties: tags,
+          geometry: { type: "LineString", coordinates: coords },
+        });
+      }
     } else if (tags["highway"]) {
       if (coords.length >= 2) {
         allRoadFeatures.push({
@@ -313,7 +325,7 @@ export function parseCombinedResponse(data: OverpassResponse): CombinedLayers {
     }
   }
 
-  return { waterFeatures, allRoadFeatures };
+  return { waterFeatures, allRoadFeatures, coastlineFeatures };
 }
 
 // ---------------------------------------------------------------------------

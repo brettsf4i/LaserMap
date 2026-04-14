@@ -120,6 +120,7 @@ export default function ControlPanel({ mapRef }: Props) {
       const processed = await runGeometryPipeline({
         bbox: store.bbox,
         waterFeatures: layers.waterFeatures,
+        coastlineFeatures: layers.coastlineFeatures,
         allRoadFeatures: layers.allRoadFeatures,
         roadBufferMeters: store.roadBufferMeters,
         majorRoadClasses: store.majorRoadClasses,

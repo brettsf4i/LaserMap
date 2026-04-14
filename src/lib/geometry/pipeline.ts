@@ -3,12 +3,14 @@ import * as turf from "@turf/turf";
 import type { BBox, ProcessedLayers } from "@/lib/store/types";
 import { ROAD_CLASS_DEFS, getRoadClassification } from "@/lib/overpass/queries";
 import { buildBBoxPolygon } from "./clip";
-import { unionWaterPolygons, subtractWaterFromLand } from "./water";
+import { unionWaterPolygons, subtractWaterFromLand, buildOceanFromCoastlines } from "./water";
 import { simplifyRoads, bufferMajorRoads } from "./roads";
 
 export interface PipelineInput {
   bbox: BBox;
   waterFeatures: Feature<Polygon | MultiPolygon | LineString>[];
+  /** OSM coastline ways used to synthesize ocean polygons */
+  coastlineFeatures: Feature<LineString>[];
   /** All road features returned by the Overpass query — classified here. */
   allRoadFeatures: Feature<LineString>[];
   roadBufferMeters: number;
@@ -72,7 +74,12 @@ export async function runGeometryPipeline(
   await yieldToUI();
 
   // ── 1. CUT LAYER: land minus water ───────────────────────────────────────
-  const water = await unionWaterPolygons(input.waterFeatures, bboxPolygon, areaKm2);
+  const oceanPolys = buildOceanFromCoastlines(
+    input.coastlineFeatures.map((f) => f.geometry.coordinates),
+    input.bbox
+  );
+  const allWaterFeatures = [...input.waterFeatures, ...oceanPolys];
+  const water = await unionWaterPolygons(allWaterFeatures, bboxPolygon, areaKm2);
   await yieldToUI();
   const cutLayer = await subtractWaterFromLand(bboxPolygon, water);
   await yieldToUI();

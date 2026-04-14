@@ -143,6 +143,7 @@ export function buildCombinedQuery(bbox: BBox): string {
 (
   way["natural"="water"](${bb});
   relation["natural"="water"](${bb});
+  way["natural"="coastline"](${bb});
   way["waterway"~"^(river|canal)$"](${bb});
   relation["waterway"="riverbank"](${bb});
   way["landuse"="reservoir"](${bb});
