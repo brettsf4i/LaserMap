@@ -341,172 +341,162 @@ function stitchIntoChains(coordArrays: Position[][]): Position[][] {
 }
 
 /**
- * Build ocean (sea) polygons from OSM coastline ways.
+ * Build land polygon(s) directly from OSM coastline ways.
  *
  * OSM convention: land is to the LEFT of coastline direction, sea is to the RIGHT.
- * Each open chain runs from bbox boundary to bbox boundary; we close it with bbox
- * edge segments on the sea side.
  *
- * @param coastlineCoords - coordinate arrays from coastline LineString features
- * @param bbox - [west, south, east, north]
+ * For each open chain crossing the bbox boundary:
+ *   land ring = A → chain → B → cornersBetweenCCW(tB, tA, bbox) → A
+ *
+ * Going CCW from B to A picks up the bbox corners on the LAND side (verified by
+ * the signed-area check — the resulting ring must be CCW = positive area).
+ *
+ * Multiple chains are intersected to produce the actual land area (each chain
+ * constrains land from one side — e.g. Gulf coast from the south, bay coast
+ * from the north, together yielding the peninsula).
+ *
+ * Closed CCW rings in the data are islands (land); they are unioned into the result.
  */
-export function buildOceanFromCoastlines(
+export function buildLandFromCoastlines(
   coastlineCoords: Position[][],
   bbox: BBox
-): Feature<Polygon>[] {
-  if (coastlineCoords.length === 0) return [];
-
-  const [west, south, east, north] = bbox;
-  const corners: Position[] = [
-    [west, south],
-    [east, south],
-    [east, north],
-    [west, north],
-  ];
+): Feature<MultiPolygon> | null {
+  if (coastlineCoords.length === 0) return null;
 
   const chains = stitchIntoChains(coastlineCoords);
-  const results: Feature<Polygon>[] = [];
+  if (chains.length === 0) return null;
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const openLandPolys: any[] = [];
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const islandPolys: any[] = [];
 
   for (const chain of chains) {
     const start = chain[0];
     const end = chain[chain.length - 1];
-
     const isClosed =
       Math.abs(start[0] - end[0]) < 1e-9 &&
       Math.abs(start[1] - end[1]) < 1e-9;
 
     if (isClosed) {
-      // Closed ring: an island (CW = land, skip) or enclosed sea (CCW)
+      // In OSM coastline convention, a closed ring where land is to the LEFT
+      // means a CCW ring = the interior is land = an island.
       const area = signedArea(chain);
-      if (area >= 0) {
-        // CCW (GeoJSON convention) = enclosed sea area
+      if (area > 0 && chain.length >= 4) {
+        // CCW closed ring = island (interior is land)
         const ring = [...chain];
+        // Ensure ring is properly closed
         if (
           Math.abs(ring[0][0] - ring[ring.length - 1][0]) > 1e-9 ||
           Math.abs(ring[0][1] - ring[ring.length - 1][1]) > 1e-9
         ) {
           ring.push([ring[0][0], ring[0][1]]);
         }
-        if (ring.length >= 4) {
-          results.push({
-            type: "Feature",
-            properties: { natural: "water" },
-            geometry: { type: "Polygon", coordinates: [ring] },
-          });
-        }
+        islandPolys.push([ring]);
       }
-      // CW = island = land, skip
+      // CW ring = enclosed sea — skip (we don't need to model it explicitly)
       continue;
     }
 
     // Open chain: clip to bbox
-    let clippedCoords: Position[];
+    let clipped: Position[];
     try {
       const lineFeature: Feature<LineString> = {
         type: "Feature",
         properties: {},
         geometry: { type: "LineString", coordinates: chain },
       };
-      const clipped = turf.bboxClip(lineFeature, bbox);
-      if (!clipped || clipped.geometry.type !== "LineString") continue;
-      clippedCoords = clipped.geometry.coordinates as Position[];
+      const result = turf.bboxClip(lineFeature, bbox);
+      if (!result || result.geometry.type !== "LineString") continue;
+      clipped = result.geometry.coordinates as Position[];
     } catch {
-      clippedCoords = chain;
+      clipped = chain;
     }
 
-    if (clippedCoords.length < 2) continue;
+    if (clipped.length < 2) continue;
 
-    const A = clippedCoords[0];
-    const B = clippedCoords[clippedCoords.length - 1];
+    const A = clipped[0];
+    const B = clipped[clipped.length - 1];
+    const tA = pointToT(A, bbox);
+    const tB = pointToT(B, bbox);
 
-    const t_A = pointToT(A, bbox);
-    const t_B = pointToT(B, bbox);
+    // Both endpoints must be on the bbox boundary
+    if (tA < 0 || tB < 0) continue;
+    // Degenerate: A and B are the same boundary point
+    if (Math.abs(tA - tB) < 1e-9) continue;
 
-    if (t_A < 0 || t_B < 0) {
-      // Chain endpoints not on bbox boundary — likely a fully-interior island
-      continue;
-    }
+    // Land corners: go CCW from B to A — this traverses the bbox edge on the LAND side.
+    // (OSM: land is LEFT of direction A→B, so the land boundary from B back to A is
+    //  the CCW arc around the bbox.)
+    const landCorners = cornersBetweenCCW(tB, tA, bbox);
 
-    // Collect corners going CCW from A to B
-    const ccwCorners = cornersBetweenCCW(t_A, t_B, bbox);
-
-    // Verify sea-side using cross product: D = B - A direction
-    // A corner C is to the RIGHT of A→B if D.x*(C.lat - A.lat) - D.y*(C.lon - A.lon) < 0
-    // (using [lon, lat] coords, so index 0=lon, 1=lat)
-    const D = [B[0] - A[0], B[1] - A[1]];
-
-    let seaCorners: Position[];
-    if (ccwCorners.length > 0) {
-      // Check if first CCW corner is on the sea (right) side
-      const c = ccwCorners[0];
-      const cross = D[0] * (c[1] - A[1]) - D[1] * (c[0] - A[0]);
-      if (cross < 0) {
-        // CCW corners are on the sea side — correct
-        seaCorners = ccwCorners;
-      } else {
-        // Take CW direction (the other corners)
-        seaCorners = cornersBetweenCCW(t_B, t_A, bbox);
-      }
-    } else {
-      // No corners between A and B in CCW direction; check if the CW direction has corners
-      const cwCorners = cornersBetweenCCW(t_B, t_A, bbox);
-      if (cwCorners.length === 0) {
-        // A and B are on the same edge, no corners needed — use cross product to decide
-        // which direction (CCW or CW) is sea side
-        // For same-edge, if D points in the expected direction, sea is to the right
-        // We'll default to CCW (no corners) and verify after polygon construction
-        seaCorners = [];
-      } else {
-        // CW corners exist; check if they're sea-side
-        const c = cwCorners[0];
-        const cross = D[0] * (c[1] - A[1]) - D[1] * (c[0] - A[0]);
-        seaCorners = cross < 0 ? [] : cwCorners;
-      }
-    }
-
-    // Build CCW polygon: A → seaCorners → B → reversed chain interior → A
-    const reversedInterior = [...clippedCoords].reverse().slice(1, clippedCoords.length - 1);
-    const ring: Position[] = [
-      A,
-      ...seaCorners,
-      B,
-      ...reversedInterior,
-      A,
-    ];
-
+    // Build ring: A → chain interior → B → land corners → A
+    const ring: Position[] = [A, ...clipped.slice(1, -1), B, ...landCorners, A];
     if (ring.length < 4) continue;
 
-    // Final check: ensure ring is CCW (positive signed area in GeoJSON lon/lat space)
-    let area = signedArea(ring);
-    let finalRing = ring;
-    if (area < 0) {
-      // Flip to CCW
-      finalRing = [...ring].reverse();
-    }
-    area = Math.abs(area);
-    if (area < 1e-10) continue; // degenerate
+    const area = signedArea(ring);
+    if (Math.abs(area) < 1e-10) continue; // degenerate
 
-    results.push({
-      type: "Feature",
-      properties: { natural: "water" },
-      geometry: { type: "Polygon", coordinates: [finalRing] },
-    });
+    // GeoJSON exterior ring must be CCW (positive area).
+    // For a correctly directed OSM coastline this will already be CCW;
+    // the reversal is a safety net for any edge cases.
+    const finalRing = area > 0 ? ring : [...ring].reverse();
+    openLandPolys.push([finalRing]);
   }
 
-  // If the entire bbox is ocean (no coastlines intersect bbox boundary but
-  // all corners are in the ocean), handle by returning a full-bbox polygon.
-  // This is detected when all chains are interior islands.
-  // (Handled implicitly: if no open chains produced results, the caller
-  //  sees no ocean polygons — which is correct if there really are none.)
+  if (openLandPolys.length === 0 && islandPolys.length === 0) return null;
 
-  return results;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let landResult: any;
+
+  if (openLandPolys.length === 0) {
+    // Only closed island rings — union them together
+    landResult = islandPolys[0];
+    for (let i = 1; i < islandPolys.length; i++) {
+      try {
+        const uni = polygonClipping.union(landResult, islandPolys[i]);
+        if (uni && uni.length > 0) landResult = uni;
+      } catch { /* skip */ }
+    }
+  } else {
+    // Start with the first open-chain land polygon, then intersect each additional
+    // chain's land polygon.  Each chain constrains the land from one side; the
+    // intersection of all constraints is the actual land area.
+    landResult = openLandPolys[0];
+    for (let i = 1; i < openLandPolys.length; i++) {
+      try {
+        const inter = polygonClipping.intersection(landResult, openLandPolys[i]);
+        if (inter && inter.length > 0) {
+          landResult = inter;
+        }
+        // If intersection is empty (chains bound separate land masses), keep
+        // the existing result — better to show more land than none.
+      } catch { /* keep what we have */ }
+    }
+  }
+
+  // Union in any island polygons
+  for (const island of islandPolys) {
+    try {
+      const uni = polygonClipping.union(landResult, island);
+      if (uni && uni.length > 0) landResult = uni;
+    } catch { /* skip */ }
+  }
+
+  if (!landResult || !landResult.length) return null;
+
+  return {
+    type: "Feature",
+    properties: {},
+    geometry: { type: "MultiPolygon", coordinates: landResult },
+  };
 }
 
 export async function subtractWaterFromLand(
-  bboxPolygon: Feature<Polygon>,
+  landBase: Feature<Polygon | MultiPolygon>,
   water: Feature<MultiPolygon> | null
 ): Promise<Feature<MultiPolygon>> {
-  const bboxCoords: ClipMulti = [bboxPolygon.geometry.coordinates];
+  const bboxCoords: ClipMulti = featureToClipCoords(landBase);
 
   if (!water) {
     return clipResultToFeature(bboxCoords);

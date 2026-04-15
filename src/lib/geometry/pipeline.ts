@@ -3,7 +3,7 @@ import * as turf from "@turf/turf";
 import type { BBox, ProcessedLayers } from "@/lib/store/types";
 import { ROAD_CLASS_DEFS, getRoadClassification } from "@/lib/overpass/queries";
 import { buildBBoxPolygon } from "./clip";
-import { unionWaterPolygons, subtractWaterFromLand, buildOceanFromCoastlines } from "./water";
+import { unionWaterPolygons, subtractWaterFromLand, buildLandFromCoastlines } from "./water";
 import { simplifyRoads, bufferMajorRoads } from "./roads";
 
 export interface PipelineInput {
@@ -74,14 +74,27 @@ export async function runGeometryPipeline(
   await yieldToUI();
 
   // ── 1. CUT LAYER: land minus water ───────────────────────────────────────
-  const oceanPolys = buildOceanFromCoastlines(
-    input.coastlineFeatures.map((f) => f.geometry.coordinates),
-    input.bbox
-  );
-  const allWaterFeatures = [...input.waterFeatures, ...oceanPolys];
-  const water = await unionWaterPolygons(allWaterFeatures, bboxPolygon, areaKm2);
+  //
+  // Coastal areas: OSM uses `natural=coastline` ways instead of water polygons.
+  // We build the land polygon DIRECTLY from coastline chains (A→chain→B→land
+  // corners→A), then subtract only inland water bodies from it.
+  // This avoids the previous "build ocean polygon → difference(bbox, ocean)"
+  // approach which produced empty results.
+  const coastlineLand = input.coastlineFeatures.length > 0
+    ? buildLandFromCoastlines(
+        input.coastlineFeatures.map((f) => f.geometry.coordinates),
+        input.bbox
+      )
+    : null;
+
+  // Land base: coastline-derived polygon, or full bbox for inland areas
+  const landBase = coastlineLand ?? bboxPolygon;
+
+  // Only union inland water features (lakes, rivers, ponds).
+  // Coastal water (ocean/sea) is already excluded by the land polygon boundary.
+  const water = await unionWaterPolygons(input.waterFeatures, bboxPolygon, areaKm2);
   await yieldToUI();
-  const cutLayer = await subtractWaterFromLand(bboxPolygon, water);
+  const cutLayer = await subtractWaterFromLand(landBase, water);
   await yieldToUI();
 
   // ── 2. ENGRAVE LAYER: simplified local roads ──────────────────────────────
