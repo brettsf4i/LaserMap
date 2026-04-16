@@ -394,20 +394,16 @@ export function generateCutLayerSVG(
     const innerR = outerR - border.thicknessMm;
     d = innerR > 0 ? clipMultiPolygonToCircle(feature.geometry, proj, innerR) : "";
   } else {
-    // Build the cut-layer path as: container ring (outer) + water holes (inner).
+    // Render only the WATER shapes (complement of land within the inner bbox).
     //
-    // Reason: the land polygon's outer ring may include bbox-edge segments (e.g.
-    // for coastal areas the ring follows the coastline AND part of the bbox edge).
-    // Rendering the land polygon directly would create cut lines along those
-    // bbox edges, physically separating the land from the border frame.
+    // Why: the land polygon's outer ring includes bbox-edge segments. Tracing those
+    // in the SVG creates cuts that physically separate the land from the border frame.
     //
-    // By computing water = container − land and rendering
-    //   "container ring + water rings"
-    // the laser only traces the actual land–water boundary (coastline, lake shores)
-    // and the outer border — no extra cuts along bbox edges.
+    // By rendering water = innerBbox − land, the laser only traces:
+    //   • the coastline / lake shores (the actual land–water boundary)
+    //   • the sea-side bbox edges (shared with the border layer — redundant but harmless)
     //
-    // With fill-rule="evenodd": land is filled (1 crossing from container ring),
-    // water is transparent (2 crossings = even = not filled). ✓
+    // Land-side bbox edges are never traced, so land stays welded to the border. ✓
     const [west, south, east, north] = proj.bbox;
     let landFeature = feature;
     let containerRing: Position[];
@@ -435,12 +431,11 @@ export function generateCutLayerSVG(
         landFeature.geometry.coordinates as unknown as Parameters<typeof polygonClipping.difference>[1]
       );
 
-      const containerPath = polygonRingToPath(containerRing, proj);
-      const waterPath = (waterCoords as Position[][][])
+      // Only the water shapes — no container ring in the path.
+      // The laser traces only water outlines (coastlines, lake shores).
+      d = (waterCoords as Position[][][])
         .flatMap((poly) => poly.map((ring) => polygonRingToPath(ring, proj)))
         .join(" ");
-
-      d = waterPath.length > 0 ? `${containerPath} ${waterPath}` : containerPath;
     } catch {
       // Fallback: render land polygon directly
       d = multiPolygonToPath(landFeature.geometry, proj);
