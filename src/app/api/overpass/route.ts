@@ -1,5 +1,7 @@
-export const runtime = "edge";
-
+// Node.js runtime — needed for Overpass queries that can take 90–120 s.
+// Edge runtime has a hard 30-s cap which always kills the proxy before
+// Overpass responds, forcing every request through the less-reliable
+// browser-direct path (which returns XML on error, breaking res.json()).
 import { NextRequest, NextResponse } from "next/server";
 import { LRUCache } from "lru-cache";
 
