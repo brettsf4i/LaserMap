@@ -3,6 +3,9 @@
 // Overpass responds, forcing every request through the less-reliable
 // browser-direct path (which returns XML on error, breaking res.json()).
 import { NextRequest, NextResponse } from "next/server";
+
+// Allow up to 150 s for the proxy to receive an Overpass response.
+export const maxDuration = 150;
 import { LRUCache } from "lru-cache";
 
 const cache = new LRUCache<string, string>({

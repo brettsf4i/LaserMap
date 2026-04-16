@@ -151,8 +151,8 @@ export function buildCombinedQuery(bbox: BBox): string {
   way["natural"="wetland"](${bb});
   way["water"~"."](${bb});
   relation["water"~"."](${bb});
-  way["highway"~"^(${cutRegex})$"]["name"]${cutLenFilter}(${bb});
-  way["highway"~"^(${engraveRegex})$"]${engraveLenFilter}(${bb});
+  way["highway"~"^(${cutRegex})$"]["name"](${bb})${cutLenFilter};
+  way["highway"~"^(${engraveRegex})$"](${bb})${engraveLenFilter};
 );
 out body;
 >;
