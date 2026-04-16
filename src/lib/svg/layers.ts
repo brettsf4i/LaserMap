@@ -394,11 +394,57 @@ export function generateCutLayerSVG(
     const innerR = outerR - border.thicknessMm;
     d = innerR > 0 ? clipMultiPolygonToCircle(feature.geometry, proj, innerR) : "";
   } else {
-    const clipped =
-      border?.enabled && border.thicknessMm > 0
-        ? clipToInnerBbox(feature, proj, border.thicknessMm)
-        : feature;
-    d = multiPolygonToPath(clipped.geometry, proj);
+    // Build the cut-layer path as: container ring (outer) + water holes (inner).
+    //
+    // Reason: the land polygon's outer ring may include bbox-edge segments (e.g.
+    // for coastal areas the ring follows the coastline AND part of the bbox edge).
+    // Rendering the land polygon directly would create cut lines along those
+    // bbox edges, physically separating the land from the border frame.
+    //
+    // By computing water = container − land and rendering
+    //   "container ring + water rings"
+    // the laser only traces the actual land–water boundary (coastline, lake shores)
+    // and the outer border — no extra cuts along bbox edges.
+    //
+    // With fill-rule="evenodd": land is filled (1 crossing from container ring),
+    // water is transparent (2 crossings = even = not filled). ✓
+    const [west, south, east, north] = proj.bbox;
+    let landFeature = feature;
+    let containerRing: Position[];
+
+    if (border?.enabled && border.thicknessMm > 0) {
+      const insetX = border.thicknessMm * (east - west) / proj.width;
+      const insetY = border.thicknessMm * (north - south) / proj.height;
+      containerRing = [
+        [west + insetX, south + insetY],
+        [east - insetX, south + insetY],
+        [east - insetX, north - insetY],
+        [west + insetX, north - insetY],
+        [west + insetX, south + insetY],
+      ];
+      landFeature = clipToInnerBbox(feature, proj, border.thicknessMm);
+    } else {
+      containerRing = [
+        [west, south], [east, south], [east, north], [west, north], [west, south],
+      ];
+    }
+
+    try {
+      const waterCoords = polygonClipping.difference(
+        [[containerRing]] as unknown as Parameters<typeof polygonClipping.difference>[0],
+        landFeature.geometry.coordinates as unknown as Parameters<typeof polygonClipping.difference>[1]
+      );
+
+      const containerPath = polygonRingToPath(containerRing, proj);
+      const waterPath = (waterCoords as Position[][][])
+        .flatMap((poly) => poly.map((ring) => polygonRingToPath(ring, proj)))
+        .join(" ");
+
+      d = waterPath.length > 0 ? `${containerPath} ${waterPath}` : containerPath;
+    } catch {
+      // Fallback: render land polygon directly
+      d = multiPolygonToPath(landFeature.geometry, proj);
+    }
   }
 
   return buildSVGDocument(
