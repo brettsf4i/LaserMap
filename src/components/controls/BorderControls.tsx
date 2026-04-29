@@ -7,12 +7,10 @@ export default function BorderControls() {
   const {
     borderEnabled,
     borderShape,
-    cornerMarksEnabled,
     widthMm,
     unit,
     setBorderEnabled,
     setBorderShape,
-    setCornerMarksEnabled,
   } = useAppStore();
 
   // Auto-computed thickness: 5% of map width (matches export logic in zip.ts)
@@ -26,7 +24,7 @@ export default function BorderControls() {
       {/* ── Header with toggle ── */}
       <div className="flex items-center justify-between">
         <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide">
-          Border &amp; Registration
+          Border
         </h3>
         <button
           role="switch"
@@ -120,43 +118,9 @@ export default function BorderControls() {
             Automatically set to 5% of the map width so it scales with your project size.
           </p>
 
-          {/* Corner registration marks — rectangle only */}
-          {borderShape === "rectangle" && (
-            <label className="flex items-start gap-2.5 cursor-pointer select-none">
-              <span className="relative flex-shrink-0 mt-0.5">
-                <input
-                  type="checkbox"
-                  checked={cornerMarksEnabled}
-                  onChange={(e) => setCornerMarksEnabled(e.target.checked)}
-                  className="sr-only"
-                />
-                <span
-                  className={`flex h-4 w-4 items-center justify-center rounded border-2 transition-colors ${
-                    cornerMarksEnabled
-                      ? "bg-blue-600 border-blue-600"
-                      : "bg-white border-gray-300"
-                  }`}
-                >
-                  {cornerMarksEnabled && (
-                    <svg className="w-2.5 h-2.5 text-white" fill="currentColor" viewBox="0 0 20 20">
-                      <path d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" />
-                    </svg>
-                  )}
-                </span>
-              </span>
-              <div>
-                <p className="text-sm text-gray-700 leading-tight">Corner registration marks</p>
-                <p className="text-xs text-gray-400 mt-0.5">
-                  Circular holes in the frame corners — use with 3 mm dowel pins for precise stacking.
-                </p>
-              </div>
-            </label>
-          )}
-
           {/* Info note */}
-          <div className="text-xs text-gray-400 bg-gray-50 rounded-md px-3 py-2 leading-snug space-y-1">
-            <p>The solid frame band is cut identically on all three layers.</p>
-            <p>Stack the pieces and align the outer edges for perfect registration.</p>
+          <div className="text-xs text-gray-400 bg-gray-50 rounded-md px-3 py-2 leading-snug">
+            All three layers share identical outer boundaries — stack and glue them flush for perfect alignment.
           </div>
 
         </div>
