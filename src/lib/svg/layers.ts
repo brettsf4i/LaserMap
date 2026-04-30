@@ -380,6 +380,112 @@ function clipAndPathLinesCircle(
   return parts.join(" ");
 }
 
+// ── Unified cut-layer path builders ──────────────────────────────────────────
+
+/**
+ * Build a single unified polygon that is the union of the rectangular border
+ * frame and the clipped land polygon.
+ *
+ * Set math:
+ *   borderFrame = outerBbox − innerBbox   (the solid frame ring)
+ *   land        = innerBbox − waterAreas  (land with water as holes)
+ *   union       = outerBbox − waterAreas  (entire piece, water as holes)
+ *
+ * The inner-bbox boundary between frame and land cancels out in the union,
+ * so land and frame are ONE connected piece of wood.  The laser only traces:
+ *   • outer bbox edge (releases the piece from the sheet)
+ *   • each water/sea hole outline (cuts out water areas)
+ *
+ * Visually: land+frame = solid red fill, water = transparent (evenodd holes).
+ * This matches the expected laser-map preview (dark land, checkered water). ✓
+ */
+function unifiedRectCutPath(
+  feature: Feature<MultiPolygon>,
+  proj: Projection,
+  thicknessMm: number
+): string {
+  const [west, south, east, north] = proj.bbox;
+  const insetX = thicknessMm * (east - west) / proj.width;
+  const insetY = thicknessMm * (north - south) / proj.height;
+
+  // Outer rectangle — CCW = exterior of the whole piece
+  const outerRing: Position[] = [
+    [west, south], [east, south], [east, north], [west, north], [west, south],
+  ];
+  // Inner rectangle — CW = hole punched in the border frame
+  const innerHole: Position[] = [
+    [west + insetX, south + insetY],
+    [west + insetX, north - insetY],
+    [east - insetX, north - insetY],
+    [east - insetX, south + insetY],
+    [west + insetX, south + insetY],
+  ];
+
+  const landClipped = clipToInnerBbox(feature, proj, thicknessMm);
+
+  try {
+    const unified = polygonClipping.union(
+      [[outerRing, innerHole]] as unknown as Parameters<typeof polygonClipping.union>[0],
+      landClipped.geometry.coordinates as unknown as Parameters<typeof polygonClipping.union>[1]
+    );
+    if (unified.length > 0) {
+      return (unified as Position[][][])
+        .flatMap((p) => p.map((r) => polygonRingToPath(r, proj)))
+        .join(" ");
+    }
+  } catch { /* fall through */ }
+
+  return multiPolygonToPath(landClipped.geometry, proj);
+}
+
+/**
+ * Build a single unified polygon for a circular border frame + land.
+ * Equivalent to unifiedRectCutPath but uses geo-space ellipses so the
+ * circle boundary maps perfectly to the SVG circle after projection.
+ */
+function unifiedCircleCutPath(
+  geom: MultiPolygon,
+  proj: Projection,
+  thicknessMm: number
+): string {
+  const outerR = Math.min(proj.width, proj.height) / 2;
+  const innerR = outerR - thicknessMm;
+  if (innerR <= 0) return "";
+
+  const outerGeoRing = geoEllipseForSVGCircle(proj, outerR); // CCW
+  const innerGeoRing = geoEllipseForSVGCircle(proj, innerR); // CCW
+  const innerHole    = [...innerGeoRing].reverse();           // CW = hole
+
+  // Clip land to inner geo-ellipse
+  let landCoords: Position[][][];
+  try {
+    const clipped = polygonClipping.intersection(
+      geom.coordinates as unknown as Parameters<typeof polygonClipping.intersection>[0],
+      [[innerGeoRing]] as unknown as Parameters<typeof polygonClipping.intersection>[1]
+    );
+    landCoords = (clipped?.length ? clipped : []) as Position[][][];
+  } catch {
+    landCoords = [];
+  }
+
+  try {
+    const args: Parameters<typeof polygonClipping.union> = [
+      [[outerGeoRing, innerHole]] as unknown as Parameters<typeof polygonClipping.union>[0],
+      ...(landCoords.length
+        ? [landCoords as unknown as Parameters<typeof polygonClipping.union>[1]]
+        : []),
+    ];
+    const unified = polygonClipping.union(...args);
+    if (unified?.length) {
+      return (unified as Position[][][])
+        .flatMap((p) => p.map((r) => polygonRingToPath(r, proj)))
+        .join(" ");
+    }
+  } catch { /* fall through */ }
+
+  return multiPolygonToPath(geom, proj);
+}
+
 // ── Layer generators ──────────────────────────────────────────────────────────
 
 export function generateCutLayerSVG(
@@ -389,64 +495,28 @@ export function generateCutLayerSVG(
 ): string {
   let d: string;
 
-  if (border?.enabled && border.thicknessMm > 0 && border.shape === "circle") {
-    const outerR = Math.min(proj.width, proj.height) / 2;
-    const innerR = outerR - border.thicknessMm;
-    d = innerR > 0 ? clipMultiPolygonToCircle(feature.geometry, proj, innerR) : "";
-  } else {
-    // Render only the WATER shapes (complement of land within the inner bbox).
-    //
-    // Why: the land polygon's outer ring includes bbox-edge segments. Tracing those
-    // in the SVG creates cuts that physically separate the land from the border frame.
-    //
-    // By rendering water = innerBbox − land, the laser only traces:
-    //   • the coastline / lake shores (the actual land–water boundary)
-    //   • the sea-side bbox edges (shared with the border layer — redundant but harmless)
-    //
-    // Land-side bbox edges are never traced, so land stays welded to the border. ✓
-    const [west, south, east, north] = proj.bbox;
-    let landFeature = feature;
-    let containerRing: Position[];
-
-    if (border?.enabled && border.thicknessMm > 0) {
-      const insetX = border.thicknessMm * (east - west) / proj.width;
-      const insetY = border.thicknessMm * (north - south) / proj.height;
-      containerRing = [
-        [west + insetX, south + insetY],
-        [east - insetX, south + insetY],
-        [east - insetX, north - insetY],
-        [west + insetX, north - insetY],
-        [west + insetX, south + insetY],
-      ];
-      landFeature = clipToInnerBbox(feature, proj, border.thicknessMm);
+  if (border?.enabled && border.thicknessMm > 0) {
+    if (border.shape === "circle") {
+      // Union circular frame + land clipped to inner circle
+      d = unifiedCircleCutPath(feature.geometry, proj, border.thicknessMm);
     } else {
-      containerRing = [
-        [west, south], [east, south], [east, north], [west, north], [west, south],
-      ];
+      // Union rectangular frame + land clipped to inner bbox
+      // Result: outer-bbox outline + water/sea holes — no inner-bbox cut line
+      d = unifiedRectCutPath(feature, proj, border.thicknessMm);
     }
-
-    try {
-      const waterCoords = polygonClipping.difference(
-        [[containerRing]] as unknown as Parameters<typeof polygonClipping.difference>[0],
-        landFeature.geometry.coordinates as unknown as Parameters<typeof polygonClipping.difference>[1]
-      );
-
-      // Only the water shapes — no container ring in the path.
-      // The laser traces only water outlines (coastlines, lake shores).
-      d = (waterCoords as Position[][][])
-        .flatMap((poly) => poly.map((ring) => polygonRingToPath(ring, proj)))
-        .join(" ");
-    } catch {
-      // Fallback: render land polygon directly
-      d = multiPolygonToPath(landFeature.geometry, proj);
-    }
+  } else {
+    // No border: render the land polygon directly.
+    // Evenodd fill-rule makes water holes transparent. ✓
+    d = multiPolygonToPath(feature.geometry, proj);
   }
 
+  // The border frame geometry is baked into the unified path above,
+  // so pass undefined here to prevent buildSVGDocument adding a duplicate frame.
   return buildSVGDocument(
     [{ id: "cut-layer", pathData: d, style: "cut" }],
     proj.width,
     proj.height,
-    border
+    undefined
   );
 }
 
